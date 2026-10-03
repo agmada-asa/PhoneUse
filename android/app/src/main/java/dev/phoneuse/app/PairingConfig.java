@@ -29,7 +29,7 @@ final class PairingConfig {
   /** Decodes only the supported pairing prefix, URL shape, bearer token and certificate pin. */
   static PairingConfig parse(String code) throws Exception {
     if (code == null || !code.startsWith("phoneuse:") || code.length() > 4096)
-      throw new IllegalArgumentException("Enter or scan a valid PhoneUse pairing code.");
+      throw new IllegalArgumentException("Enter or scan a valid Phone Use pairing code.");
     byte[] bytes;
     try {
       bytes = Base64.decode(code.substring(9), Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);

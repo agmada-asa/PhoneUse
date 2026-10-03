@@ -221,7 +221,7 @@ public final class MainActivity extends Activity {
     mark.setImageResource(R.drawable.ic_mark);
     mark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     row.addView(mark, new LinearLayout.LayoutParams(dp(15), dp(20)));
-    TextView name = text("PhoneUse", 19, ink, true);
+    TextView name = text("Phone Use", 19, ink, true);
     name.setLetterSpacing(-0.02f);
     LinearLayout.LayoutParams nameParams = weighted();
     nameParams.leftMargin = dp(8);
@@ -333,7 +333,7 @@ public final class MainActivity extends Activity {
     card.addView(sectionTitle("Protected apps"));
     card.addView(
         text(
-            "The computer can't read or control these apps, or PhoneUse itself. Commands stop"
+            "The computer can't read or control these apps, or Phone Use itself. Commands stop"
                 + " while one is on screen.",
             14,
             muted,
@@ -392,7 +392,7 @@ public final class MainActivity extends Activity {
   private void startQrScan() {
     IntentIntegrator scanner = new IntentIntegrator(this);
     scanner.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
-    scanner.setPrompt("Scan the pairing QR code shown by PhoneUse on your computer");
+    scanner.setPrompt("Scan the pairing QR code shown by Phone Use on your computer");
     scanner.setBeepEnabled(false);
     scanner.setOrientationLocked(false);
     scanner.initiateScan();
@@ -407,14 +407,14 @@ public final class MainActivity extends Activity {
     String code = result.getContents();
     if (code == null) {
       showMessage(
-          "Scan canceled or camera access was denied. Allow Camera in PhoneUse app permissions"
+          "Scan canceled or camera access was denied. Allow Camera in Phone Use app permissions"
               + " and try again, or paste a pairing code.");
       return;
     }
     confirmPairingCode(code, "This QR code");
   }
 
-  /** Routes validated PhoneUse links from external scanners through the same confirmation flow. */
+  /** Routes validated Phone Use links from external scanners through the same confirmation flow. */
   private boolean handlePairingIntent(Intent intent) {
     if (intent == null
         || !Intent.ACTION_VIEW.equals(intent.getAction())
@@ -426,7 +426,7 @@ public final class MainActivity extends Activity {
         || data.getEncodedAuthority() != null
         || data.getEncodedFragment() != null
         || code.length() > 4096) {
-      showMessage("Enter or scan a valid PhoneUse pairing code.");
+      showMessage("Enter or scan a valid Phone Use pairing code.");
       return true;
     }
     confirmPairingCode(code, "This link");
@@ -460,8 +460,8 @@ public final class MainActivity extends Activity {
         .setTitle("Allow accessibility access")
         .setMessage(
             "Android can block accessibility access for apps installed outside an app store."
-                + " Open PhoneUse app info, tap the three-dot menu, and choose Allow restricted"
-                + " settings. Then return here and enable PhoneUse in Accessibility settings.")
+                + " Open Phone Use app info, tap the three-dot menu, and choose Allow restricted"
+                + " settings. Then return here and enable Phone Use in Accessibility settings.")
         .setNegativeButton("Close", null)
         .setNeutralButton("Open app info", (dialog, which) -> openAppInfo())
         .setPositiveButton(
@@ -575,18 +575,24 @@ public final class MainActivity extends Activity {
         setPill("Not paired", sunk, muted);
         headline.setText("Pair with your computer");
         detail.setText(
-            "On your computer, open the PhoneUse console and select Show pairing QR code. Then"
+            "On your computer, open the Phone Use console and select Show pairing QR code. Then"
                 + " scan it here."
                 + " Both devices must be on the same Wi-Fi.");
         primaryAction.setText("Scan pairing QR code");
         primaryAction.setOnClickListener(v -> startQrScan());
         break;
       case DISCONNECTED:
-        setPill("Disconnected", sunk, muted);
-        headline.setText("Ready to connect");
-        detail.setText(
-            "Paired with " + address + ". Connecting lets the computer see that this phone is"
-                + " available. It can't do anything until you allow control.");
+        if (!"Disconnected".equals(PhoneState.connectionStatus)) {
+          setPill("Connection problem", warnSoft, warn);
+          headline.setText("Connection needs attention");
+          detail.setText(PhoneState.connectionStatus);
+        } else {
+          setPill("Disconnected", sunk, muted);
+          headline.setText("Ready to connect");
+          detail.setText(
+              "Paired with " + address + ". Connecting lets the computer see that this phone is"
+                  + " available. It can't do anything until you allow control.");
+        }
         primaryAction.setText("Connect");
         primaryAction.setOnClickListener(v -> beginConnection());
         break;
@@ -606,8 +612,8 @@ public final class MainActivity extends Activity {
           setPill("Connected", warnSoft, warn);
           headline.setText("Turn on accessibility");
           detail.setText(
-              "PhoneUse needs accessibility access to read the screen and tap for the computer."
-                  + " Enable PhoneUse in the list that opens.");
+              "Phone Use needs accessibility access to read the screen and tap for the computer."
+                  + " Enable Phone Use in the list that opens.");
           primaryAction.setText("Open Accessibility settings");
           primaryAction.setOnClickListener(
               v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
@@ -904,7 +910,7 @@ public final class MainActivity extends Activity {
   private void addManualPackage() {
     String pkg = packageInput.getText().toString().trim();
     if (!pkg.matches("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+") || PhoneState.OWN_PACKAGE.equals(pkg)) {
-      showMessage("Enter a valid app package name. PhoneUse is always blocked.");
+      showMessage("Enter a valid app package name. Phone Use is always blocked.");
       return;
     }
     Set<String> updated = blockedPackages();

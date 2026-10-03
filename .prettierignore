@@ -1,0 +1,5 @@
+# Generated lockfile; npm owns its formatting.
+package-lock.json
+
+# Vendored font license.
+bridge/public/fonts/OFL.txt

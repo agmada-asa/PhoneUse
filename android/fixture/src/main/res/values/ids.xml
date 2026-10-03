@@ -3,4 +3,6 @@
     <item name="input" type="id" />
     <item name="password" type="id" />
     <item name="counter" type="id" />
+    <item name="scroll_section" type="id" />
+    <item name="deep_section" type="id" />
 </resources>

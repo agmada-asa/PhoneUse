@@ -1,0 +1,9 @@
+{
+  "printWidth": 100,
+  "overrides": [
+    {
+      "files": ["*.js", "*.mjs"],
+      "options": { "singleQuote": true }
+    }
+  ]
+}
