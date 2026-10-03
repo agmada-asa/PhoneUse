@@ -21,6 +21,9 @@ Repository-wide guidance for AI coding agents working on PhoneUse. Adapted from 
 ## Code writing
 
 - Use TypeScript at the desktop boundary and idiomatic native Android code in the companion.
+- Leave a blank line between functions, classes, types, and separate data declarations, including before their documentation comments. Keep each documentation comment attached to its declaration and closely related local declarations together.
+- Use normal spacing around operators and before opening braces. In brace-based languages, always use `{}` for `if`, `else`, and loop bodies, even for a single statement. Separate guard clauses and logical steps with blank lines; keep closely related declarations together.
+- Run `npm run format` after editing Prettier-supported files and `npm run format:check` before handoff. Follow `.prettierrc.json`'s 100-column target; keep calls, objects, and control flow readable instead of compressing them onto long lines. Java, Gradle, and shell files require their own formatting.
 - Give every hand-written source file a concise file-level documentation comment explaining what it owns and how it fits into the system.
 - Document functions, methods, classes, public types, and constants with concise language-appropriate comments. Explain meaningful effects, errors, and constraints without translating every line.
 - Keep external inputs validated and types explicit at network and MCP boundaries. Bound payloads, timeouts, and traversal sizes.
