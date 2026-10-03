@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">PhoneUse</string>
+    <string name="accessibility_description">Allows PhoneUse to inspect visible screen structure and perform actions only while you enable control in the app.</string>
+    <string name="allow_control">Allow this computer to control the phone</string>
+    <string name="accessibility_on">Accessibility access is on</string>
+    <string name="accessibility_off">Accessibility access is off</string>
+    <string name="status_control_enabled">%1$s · control enabled</string>
+    <string name="status_control_off">%1$s · control off</string>
+</resources>
