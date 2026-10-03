@@ -2,7 +2,7 @@
 
 The Android app opens an outbound **WSS** connection to `wss://<computer LAN address>:8765/phone`. TLS uses a locally generated self-signed certificate; Android validates the exact SHA-256 DER certificate fingerprint from the pairing code and its validity. Pin identity replaces public CA trust; never accept any other certificate. The request carries `Authorization: Bearer <phone token>`. Tokens must not appear in URLs or logs. The operator HTTP API binds only to `127.0.0.1:8766`.
 
-Pairing code format: `phoneuse:` followed by base64url-encoded UTF-8 JSON `{ "v": 1, "url": "wss://192.168.1.10:8765/phone", "token": "<64 hex characters>", "fingerprint": "<64 lowercase hex SHA-256 characters>" }`. Android accepts only wss URLs without credentials, query or fragment and path `/phone`. No ADB/developer mode is needed for normal use. Manual paste is the v1 pairing method.
+Pairing code format: `phoneuse:` followed by base64url-encoded UTF-8 JSON `{ "v": 1, "url": "wss://192.168.1.10:8765/phone", "token": "<64 hex characters>", "fingerprint": "<64 lowercase hex SHA-256 characters>" }`. Android accepts only wss URLs without credentials, query or fragment and path `/phone`. No ADB/developer mode is needed for normal use. The desktop console renders that exact string as a QR code locally. Android scans it with an on-device decoder, validates it with the same parser as manual paste, and asks the phone user to confirm the computer address before saving. The Android app also handles opaque `phoneuse:` VIEW links from compatible external scanners, rejects hierarchical links and fragments, and routes them through the same parser and confirmation. It clears the handled credentials from its retained launch intent. Scanning does not connect or enable control. Manual paste remains available. Camera access is used only for the pairing scanner.
 
 ## Messages
 
@@ -45,7 +45,7 @@ Reject non-finite coordinates, unknown properties/methods, wrong parameter types
 ## Local operator API
 
 - `GET /api/status` returns `{connected:boolean,device?:...,status?:...}`.
-- `GET /api/pairing` returns `{code,url,fingerprint}`. Loopback only; never expose this on the LAN listener.
+- `GET /api/pairing` returns `{code,url,fingerprint,qrDataUrl}`, where `qrDataUrl` is an in-memory PNG data URL encoding exactly `code`. Browser access requires the console's anti-CSRF token; the response is `no-store`. Loopback only; never expose this on the LAN listener.
 - `POST /api/command` accepts `{method,params}` and returns the protocol result object or `{error:{code,message}}` with a non-2xx status.
 - `POST /api/disconnect` closes the active socket and rejects pending commands.
 

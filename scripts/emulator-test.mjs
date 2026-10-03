@@ -44,13 +44,17 @@ async function localTap(text) {
     await adb('shell', 'input', 'keyevent', '4'); await settle();
   }
   for (let attempt = 0; attempt < 7; attempt++) {
+    // This harness fixes the display at 1080x1920. Scroll controls above the navigation bar
+    // before tapping; UiAutomation also reports clipped nodes underneath that bar.
     const node = (await uiNodes()).find(item => item.text?.toLocaleLowerCase('en') === text.toLocaleLowerCase('en') && item.center);
-    if (node) {
+    if (node && node.center[1] > 100 && node.center[1] < 1720) {
       // UiAutomation can briefly unbind accessibility; let it restore before the user's consent tap.
       await settle(1200);
       await adb('shell', 'input', 'tap', String(node.center[0]), String(node.center[1])); await settle(); return;
     }
-    await adb('shell', 'input', 'swipe', '500', '1600', '500', '500', '250'); await settle();
+    if (node && node.center[1] <= 100) await adb('shell', 'input', 'swipe', '500', '500', '500', '1600', '250');
+    else await adb('shell', 'input', 'swipe', '500', '1600', '500', '500', '250');
+    await settle();
   }
   throw new Error(`Setup control unavailable: ${text}`);
 }
@@ -80,12 +84,21 @@ async function denied(method, params, code) {
 }
 
 /** Opens the harmless fixture using ADB only as the local emulator operator. */
-async function fixture() { await adb('shell', 'am', 'start', '-n', 'dev.phoneuse.fixture/.FixtureActivity'); await settle(800); }
+async function fixture() { await adb('shell', 'am', 'start', '-n', 'dev.phoneuse.fixture/.FixtureActivity'); await settle(3000); }
+
+/** Waits for window ownership to settle after navigation without retrying the input action. */
+async function settledSnapshot() {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try { return await command('snapshot'); }
+    catch (error) { if (error.code !== 'APP_BLOCKED') throw error; await settle(400); }
+  }
+  throw new Error('Window ownership did not settle after navigation.');
+}
 
 /** Reobserves only after a stale-ID rejection that guarantees the semantic action did not occur. */
 async function fixtureNodeAction(find, method, params = {}) {
   for (let attempt = 0; attempt < 4; attempt++) {
-    const screen = await command('snapshot');
+    const screen = await settledSnapshot();
     const node = screen.nodes.find(find);
     assert.ok(node, 'Fixture control exists');
     try { await command(method, { snapshotId: screen.snapshotId, nodeId: node.id, ...params }); return { screen, node }; }
@@ -125,10 +138,17 @@ async function main() {
   const editor = (await uiNodes()).find(item => item.class === 'android.widget.EditText');
   assert.ok(editor?.center, 'Pairing editor exists');
   await adb('shell', 'input', 'tap', ...editor.center.map(String));
+  await settle(1000); // Let the keyboard and form scroll settle before injecting the full code.
   const { code } = await requestLocal('/api/pairing', undefined, { stateDir, adminPort: 18766 });
-  await adb('shell', 'input', 'text', code);
+  // The software keyboard can drop a long burst of injected key events on a busy emulator.
+  for (const chunk of code.match(/.{1,16}/g) ?? []) {
+    await adb('shell', 'input', 'text', chunk);
+    await settle(100);
+  }
   await adb('shell', 'input', 'keyevent', '4'); await settle();
-  await localTap('Save pairing code'); await localTap('OK');
+  await localTap('Save pairing code');
+  assert.ok((await uiNodes()).some(item => item.text === 'Pairing code saved on this phone.'), 'Manual pairing saves validated credentials');
+  await localTap('OK');
   await localTap('Connect');
   await waitStatus(value => value.connected);
   await denied('snapshot', {}, 'CONTROL_DISABLED'); passed('control disabled refuses observation');
@@ -136,7 +156,7 @@ async function main() {
   await waitStatus(value => value.status?.controlEnabled);
   await denied('snapshot', {}, 'APP_BLOCKED'); passed('PhoneUse settings cannot be read remotely');
   await fixture();
-  let screen = await command('snapshot');
+  let screen = await settledSnapshot();
   assert.equal(screen.packageName, 'dev.phoneuse.fixture'); assert.ok(screen.nodes.length > 5); assert.ok(screen.screen.width > 0);
   passed('snapshot returns actual fixture nodes and display dimensions');
   let input = screen.nodes.find(node => node.viewId?.endsWith('/input'));
@@ -164,15 +184,16 @@ async function main() {
   await command('swipe', { startX: Math.round(width / 2), startY: Math.round(height * .8), endX: Math.round(width / 2), endY: Math.round(height * .35), durationMs: 300 }); await settle();
   const scrolled = await command('snapshot');
   assert.notEqual(JSON.stringify(scrolled.nodes.map(node => node.bounds)), JSON.stringify(screen.nodes.map(node => node.bounds))); passed('swipe changes the scroll position');
-  await command('global_action', { action: 'home' }); await settle(); assert.notEqual((await command('snapshot')).packageName, 'dev.phoneuse.fixture'); passed('Home changes the foreground app');
-  await command('global_action', { action: 'recents' }); await settle(); await command('global_action', { action: 'back' }); await settle(); passed('Recent apps and Back execute');
+  await command('global_action', { action: 'home' }); await settle(); assert.notEqual((await settledSnapshot()).packageName, 'dev.phoneuse.fixture'); passed('Home changes the foreground app');
+  await command('global_action', { action: 'recents' }); await settle(1500); await command('global_action', { action: 'back' }); await settle(1500); passed('Recent apps and Back execute');
   await adb('shell', 'am', 'force-stop', 'dev.phoneuse.fixture'); await fixture();
   await fixtureClick('Open secure screen'); await settle(1000);
   try {
     const protectedImage = await command('screenshot');
     assertSecurePixelsHidden(protectedImage);
   } catch (error) {
-    assert.ok(['CAPTURE_FAILED', 'CAPTURE_SECURE', 'CAPTURE_UNAVAILABLE'].includes(error.code), 'Secure capture must fail or conceal pixels');
+    // Unknown window ownership can also deny capture before Android's secure-image check.
+    assert.ok(['CAPTURE_FAILED', 'CAPTURE_SECURE', 'CAPTURE_UNAVAILABLE', 'APP_BLOCKED'].includes(error.code), 'Secure capture must fail or conceal pixels');
   }
   passed('secure screen refuses capture or masks protected pixels');
   await adb('shell', 'am', 'force-stop', 'dev.phoneuse.fixture'); await fixture();
