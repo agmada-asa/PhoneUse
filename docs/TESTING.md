@@ -25,12 +25,12 @@ Android's `uiautomator dump` temporarily interrupts accessibility services durin
 ## Pairing and accessibility setup
 
 - Open the console at wide and narrow widths. The QR code starts hidden, fits the viewport, and can be shown and hidden using the keyboard. Hiding removes the image and pairing text from the page.
-- Scan the displayed QR in PhoneUse. Confirm that the computer address matches the console and save. Connect separately and verify control stays off until enabled on the phone.
+- Scan the displayed QR in PhoneUse. Confirm that the computer address matches the console and save. Verify the phone connects automatically, the console hides its QR code, and control stays off until enabled on the phone.
 - Open the same `phoneuse:` QR link from a compatible camera/gallery scanner with PhoneUse closed, then with it already open. Both paths must show address confirmation without starting control. Cancel leaves existing credentials unchanged. Reject malformed, hierarchical and oversized incoming links.
 - Cancel scanning or deny camera permission. No saved pairing should change, and manual paste must remain usable. Retry scanning after granting camera access in App info.
 - Scan unrelated QR content, an unsupported version, a malformed URL, an invalid token or fingerprint, or a code longer than 4096 characters. Refuse it without changing saved credentials. Do not log scanned content.
 - Verify the camera works offline without Google Play services and closes when the scanner leaves the foreground. Check focus, orientation, and scanning a real computer display on a physical phone.
-- On a sideloaded physical installation, follow **Accessibility setup help** to App info. If Android restricts the service, approve **Allow restricted settings** locally, then enable PhoneUse in accessibility settings. The app must never grant this setting itself.
+- On a sideloaded physical installation, follow **Setup help** to App info. If Android restricts the service, approve **Allow restricted settings** locally, then enable PhoneUse in accessibility settings. The app must never grant this setting itself.
 - The bridge integration test decodes the generated PNG with an independent QR reader, compares it with the complete pairing credentials, and verifies authentication, origin rejection and no-store caching.
 
 ## Behavior checklist

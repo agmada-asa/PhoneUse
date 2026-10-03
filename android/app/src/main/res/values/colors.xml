@@ -1,0 +1,6 @@
+<!-- EightForge palette used by the theme and launcher icon. -->
+<resources>
+    <color name="paper">#F3F0E8</color>
+    <color name="brand">#286BF1</color>
+    <color name="launcher_background">#14130F</color>
+</resources>
