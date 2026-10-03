@@ -8,6 +8,12 @@
             android:name=".SecureActivity"
             android:exported="false" />
         <activity
+            android:name=".LargeActivity"
+            android:exported="false" />
+        <activity
+            android:name=".DeepActivity"
+            android:exported="false" />
+        <activity
             android:name=".FixtureActivity"
             android:exported="true">
             <intent-filter>
