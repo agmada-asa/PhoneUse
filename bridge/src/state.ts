@@ -35,7 +35,7 @@ export async function ensureState(stateDir: string): Promise<BridgeState> {
   let saved: StateFile;
   try {
     const parsed: unknown = JSON.parse(await readFile(statePath, "utf8"));
-    if (!isStateFile(parsed)) throw new Error("Invalid PhoneUse state file");
+    if (!isStateFile(parsed)) throw new Error("Invalid Phone Use state file");
     saved = parsed;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -66,18 +66,41 @@ export async function ensureState(stateDir: string): Promise<BridgeState> {
 function isStateFile(value: unknown): value is StateFile {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const state = value as Record<string, unknown>;
-  return state.version === 1 && ["phoneToken", "adminToken", "csrfToken"].every(
-    (key) => typeof state[key] === "string" && /^[a-f0-9]{64}$/.test(state[key] as string),
+  return (
+    state.version === 1 &&
+    ["phoneToken", "adminToken", "csrfToken"].every(
+      (key) => typeof state[key] === "string" && /^[a-f0-9]{64}$/.test(state[key] as string),
+    )
   );
 }
 
 /** Generate a long-lived local identity; Android trusts it only by the paired SHA-256 fingerprint. */
 function generateCertificate(certPath: string, keyPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-sha256", "-nodes", "-keyout", keyPath,
-      "-out", certPath, "-days", "3650", "-subj", "/CN=PhoneUse Desktop Bridge"], { stdio: "ignore" });
+    const child = spawn(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-sha256",
+        "-nodes",
+        "-keyout",
+        keyPath,
+        "-out",
+        certPath,
+        "-days",
+        "3650",
+        "-subj",
+        "/CN=Phone Use Desktop Bridge",
+      ],
+      { stdio: "ignore" },
+    );
     child.once("error", reject);
-    child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`openssl exited with status ${code ?? "unknown"}`)));
+    child.once("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`openssl exited with status ${code ?? "unknown"}`)),
+    );
   });
 }
 

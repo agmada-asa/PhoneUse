@@ -9,15 +9,24 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.SystemClock;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import java.security.MessageDigest;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadLocalRandom;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -31,7 +40,7 @@ import org.json.JSONObject;
 
 /** Maintains the user-started, pinned WSS session and serializes all protocol commands. */
 public final class ConnectionService extends Service {
-  /** Actions used only by PhoneUse's local UI and notification. */
+  /** Actions used only by Phone Use's local UI and notification. */
   static final String ACTION_CONNECT = "dev.phoneuse.app.CONNECT",
       ACTION_DISCONNECT = "dev.phoneuse.app.DISCONNECT",
       ACTION_STATUS = "dev.phoneuse.app.STATUS";
@@ -55,6 +64,20 @@ public final class ConnectionService extends Service {
   /** Separate timer so reconnect waits never block command processing. */
   private final ScheduledExecutorService retryQueue = Executors.newSingleThreadScheduledExecutor();
 
+  /** One pending retry at a time, canceled when connectivity returns or the user disconnects. */
+  private ScheduledFuture<?> retryTask;
+
+  /** Lifecycle-owned callback used to wake a user-started session when a network returns. */
+  private ConnectivityManager connectivityManager;
+  private ConnectivityManager.NetworkCallback networkCallback;
+
+  /** Tracks suitable networks so duplicate capability updates cannot skip retry backoff. */
+  private final Set<Network> suitableNetworks = new HashSet<>();
+
+  /** Current socket attempt; callback identity prevents stale sockets changing newer sessions. */
+  private ConnectionAttempt activeAttempt;
+  private long connectionGeneration;
+
   /** Current authenticated WebSocket, if connected. */
   private volatile WebSocket socket;
 
@@ -67,6 +90,9 @@ public final class ConnectionService extends Service {
   /** True only for a connection session explicitly started by the phone user. */
   private volatile boolean userStarted = false;
 
+  /** Stops retrying after pairing/authentication failures that require the user to repair setup. */
+  private volatile boolean terminalFailure = false;
+
   /** User-readable connection label shown in the UI and notification. */
   private volatile String status = "Disconnected";
 
@@ -78,6 +104,7 @@ public final class ConnectionService extends Service {
   public void onCreate() {
     super.onCreate();
     liveService = this;
+    registerNetworkCallback();
   }
 
   /** Refreshes phone controls and sends the complete status frame after local consent changes. */
@@ -105,12 +132,15 @@ public final class ConnectionService extends Service {
     }
     startForeground(NOTIFICATION_ID, notification("Connecting to your computer"));
     if (ACTION_CONNECT.equals(action)) {
-      userStarted = true;
-      stopping = false;
-      PhoneState.explicitlyDisconnected = false;
-      PhoneState.controlEnabled = false;
-      retryDelayMs = 1000;
-      connect();
+      synchronized (this) {
+        userStarted = true;
+        stopping = false;
+        terminalFailure = false;
+        PhoneState.explicitlyDisconnected = false;
+        PhoneState.controlEnabled = false;
+        retryDelayMs = 1000;
+        connect();
+      }
     }
     return START_NOT_STICKY;
   }
@@ -118,7 +148,13 @@ public final class ConnectionService extends Service {
   /** Shuts down transport and ensures process death cannot preserve consent. */
   @Override
   public void onDestroy() {
-    disconnect(false);
+    synchronized (this) {
+      stopping = true;
+      userStarted = false;
+      cancelRetry();
+      disconnect(false);
+    }
+    unregisterNetworkCallback();
     commandQueue.shutdownNow();
     retryQueue.shutdownNow();
     PhoneState.controlEnabled = false;
@@ -136,7 +172,7 @@ public final class ConnectionService extends Service {
    * Opens one authenticated WebSocket using the exact paired certificate and its validity dates.
    */
   private synchronized void connect() {
-    if (stopping || !userStarted || socket != null) return;
+    if (stopping || terminalFailure || !userStarted || activeAttempt != null) return;
     String url = PhoneState.prefs(this).getString(PREF_URL, null),
         token = PhoneState.prefs(this).getString(PREF_TOKEN, null),
         pin = PhoneState.prefs(this).getString(PREF_PIN, null);
@@ -144,11 +180,12 @@ public final class ConnectionService extends Service {
       setStatus("Add a pairing code first");
       return;
     }
+    OkHttpClient attemptClient = null;
     try {
       PinnedTrustManager tm = new PinnedTrustManager(pin);
       SSLContext ssl = SSLContext.getInstance("TLS");
       ssl.init(null, new TrustManager[] {tm}, null);
-      client =
+      attemptClient =
           new OkHttpClient.Builder()
               .sslSocketFactory(ssl.getSocketFactory(), tm)
               .hostnameVerifier(
@@ -165,12 +202,27 @@ public final class ConnectionService extends Service {
               .build();
       Request request =
           new Request.Builder().url(url).header("Authorization", "Bearer " + token).build();
+      ConnectionAttempt attempt = new ConnectionAttempt(++connectionGeneration);
+      activeAttempt = attempt;
+      client = attemptClient;
       setStatus("Connecting to your computer");
-      socket = client.newWebSocket(request, new SessionListener());
+      WebSocket opened = attemptClient.newWebSocket(request, new SessionListener(attempt));
+      attempt.webSocket = opened;
+      if (activeAttempt == attempt) socket = opened;
+      else opened.cancel();
     } catch (Exception e) {
+      activeAttempt = null;
       socket = null;
-      setStatus("Could not connect. Check the pairing code and network.");
-      scheduleReconnect();
+      connectionGeneration++;
+      if (isTerminalSetupFailure(e)) {
+        terminalFailure = true;
+        setStatus("Pairing is invalid. Check the pairing code and certificate, then pair again.");
+      } else {
+        setStatus("Could not connect. Check the pairing code and network.");
+        scheduleReconnect();
+      }
+      shutdownClient(attemptClient);
+      if (client == attemptClient) client = null;
     }
   }
 
@@ -179,8 +231,12 @@ public final class ConnectionService extends Service {
     if (explicit) {
       stopping = true;
       userStarted = false;
+      terminalFailure = false;
       PhoneState.explicitlyDisconnected = true;
     }
+    connectionGeneration++;
+    activeAttempt = null;
+    cancelRetry();
     PhoneState.controlEnabled = false;
     PhoneAccessibilityService.invalidateForSessionChange();
     WebSocket current = socket;
@@ -188,30 +244,100 @@ public final class ConnectionService extends Service {
     if (current != null) current.close(1000, "phone disconnected");
     OkHttpClient c = client;
     client = null;
-    if (c != null) c.dispatcher().executorService().shutdown();
-    setStatus("Disconnected");
+    shutdownClient(c);
+    if (explicit || !terminalFailure) setStatus("Disconnected");
   }
 
   /** Schedules bounded backoff retries only while the user-started service remains active. */
-  private void scheduleReconnect() {
-    if (stopping || !userStarted || PhoneState.explicitlyDisconnected) return;
+  private synchronized void scheduleReconnect() {
+    if (stopping || terminalFailure || !userStarted || PhoneState.explicitlyDisconnected || retryTask != null) return;
     long wait = retryDelayMs;
-    retryDelayMs = Math.min(60000, retryDelayMs * 2);
-    retryQueue.schedule(
+    int jitterPermille = ThreadLocalRandom.current().nextInt(500, 1001);
+    long jitteredWait = ConnectionRetryPolicy.jitteredDelayMillis(wait, jitterPermille);
+    retryDelayMs = ConnectionRetryPolicy.nextBaseDelayMillis(retryDelayMs);
+    retryTask = retryQueue.schedule(
         () -> {
-          if (!stopping && userStarted && socket == null) connect();
+          synchronized (ConnectionService.this) {
+            retryTask = null;
+            if (!stopping && !terminalFailure && userStarted && activeAttempt == null) connect();
+          }
         },
-        wait,
+        jitteredWait,
         TimeUnit.MILLISECONDS);
   }
 
+  /** Cancels the single scheduled retry, if any. */
+  private synchronized void cancelRetry() {
+    if (retryTask != null) retryTask.cancel(false);
+    retryTask = null;
+  }
+
+  /** Registers network availability callbacks for this foreground service lifecycle. */
+  private void registerNetworkCallback() {
+    ConnectivityManager manager = getSystemService(ConnectivityManager.class);
+    connectivityManager = manager;
+    if (manager == null) return;
+    networkCallback =
+        new ConnectivityManager.NetworkCallback() {
+          @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+            boolean suitable = ConnectionRetryPolicy.isSuitableNetwork(
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET));
+            boolean newlySuitable;
+            synchronized (ConnectionService.this) {
+              newlySuitable = suitable ? suitableNetworks.add(network) : suitableNetworks.remove(network);
+            }
+            if (newlySuitable) wakeRetryForNetwork();
+          }
+
+          @Override public void onLost(Network network) {
+            synchronized (ConnectionService.this) { suitableNetworks.remove(network); }
+          }
+        };
+    try {
+      manager.registerNetworkCallback(new NetworkRequest.Builder().build(), networkCallback);
+    } catch (RuntimeException ignored) {
+      networkCallback = null;
+      synchronized (this) { suitableNetworks.clear(); }
+    }
+  }
+
+  /** Wakes a pending retry when usable network access returns during a user-started session. */
+  private synchronized void wakeRetryForNetwork() {
+    if (stopping || terminalFailure || !userStarted || PhoneState.explicitlyDisconnected) return;
+    if (activeAttempt != null) return;
+    cancelRetry();
+    connect();
+  }
+
+  /** Unregisters the service-owned network callback during destruction. */
+  private void unregisterNetworkCallback() {
+    if (connectivityManager != null && networkCallback != null) {
+      try { connectivityManager.unregisterNetworkCallback(networkCallback); }
+      catch (RuntimeException ignored) { }
+    }
+    networkCallback = null;
+    connectivityManager = null;
+    synchronized (this) { suitableNetworks.clear(); }
+  }
+
+  /** Releases dispatcher threads and pooled sockets when a connection attempt ends. */
+  private static void shutdownClient(OkHttpClient c) {
+    if (c == null) return;
+    c.dispatcher().cancelAll();
+    c.connectionPool().evictAll();
+    c.dispatcher().executorService().shutdown();
+  }
+
   /** Sends a status update after the phone user changes session consent. */
-  private void sendStatus() {
+  private synchronized void sendStatus() {
     WebSocket s = socket;
     if (s != null)
       try {
-        s.send(helloFrame().toString());
+        if (!s.send(helloFrame().toString())) s.close(1011, "status send failed");
       } catch (Exception ignored) {
+        s.close(1011, "status send failed");
       }
   }
 
@@ -219,7 +345,7 @@ public final class ConnectionService extends Service {
   private JSONObject helloFrame() throws Exception {
     return new JSONObject()
         .put("type", "hello")
-        .put("version", 1)
+        .put("version", 2)
         .put(
             "device",
             new JSONObject()
@@ -229,7 +355,7 @@ public final class ConnectionService extends Service {
         .put("status", statusObject());
   }
 
-  /** Returns the current on-device status fields defined by protocol v1. */
+  /** Returns the current on-device status fields defined by protocol v2. */
   private JSONObject statusObject() throws Exception {
     return new JSONObject()
         .put("accessibilityEnabled", PhoneState.accessibilityEnabled(this))
@@ -254,7 +380,7 @@ public final class ConnectionService extends Service {
     NotificationManager manager = getSystemService(NotificationManager.class);
     manager.createNotificationChannel(
         new NotificationChannel(
-            CHANNEL, "PhoneUse connection", NotificationManager.IMPORTANCE_LOW));
+            CHANNEL, "Phone Use connection", NotificationManager.IMPORTANCE_LOW));
     Intent disconnect = new Intent(this, ConnectionService.class).setAction(ACTION_DISCONNECT);
     PendingIntent action =
         PendingIntent.getService(
@@ -287,35 +413,58 @@ public final class ConnectionService extends Service {
 
   /** Validates and serially executes authenticated desktop command frames. */
   private final class SessionListener extends WebSocketListener {
+    private final ConnectionAttempt attempt;
+
+    SessionListener(ConnectionAttempt attempt) { this.attempt = attempt; }
+
     @Override
     public void onOpen(WebSocket webSocket, Response response) {
-      if (socket != webSocket) return;
-      PhoneAccessibilityService.invalidateForSessionChange();
-      retryDelayMs = 1000;
-      setStatus("Connected");
-      try {
-        webSocket.send(helloFrame().toString());
-      } catch (Exception e) {
-        webSocket.close(1011, "hello failed");
+      synchronized (ConnectionService.this) {
+        if (!owns(attempt)) { webSocket.close(1000, "stale connection"); return; }
+        socket = webSocket;
+        cancelRetry();
+        PhoneAccessibilityService.invalidateForSessionChange();
+        retryDelayMs = 1000;
+        setStatus("Connected");
+        try {
+          if (!webSocket.send(helloFrame().toString())) webSocket.close(1011, "hello send failed");
+        } catch (Exception e) {
+          webSocket.close(1011, "hello failed");
+        }
       }
     }
 
     @Override
     public void onMessage(WebSocket webSocket, String text) {
-      if (webSocket != socket) return;
+      if (!owns(attempt)) return;
       if (text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_MESSAGE) {
         webSocket.close(1009, "message too large");
         return;
       }
+      final long receivedAt = SystemClock.elapsedRealtime();
+      final long deadline;
       try {
-        commandQueue.execute(() -> handleCommand(webSocket, text));
+        JSONObject frame = new JSONObject(text);
+        Object timeoutValue = frame.opt("timeoutMs");
+        if (!(timeoutValue instanceof Number)) throw new IllegalArgumentException();
+        double timeoutNumber = ((Number) timeoutValue).doubleValue();
+        if (!Double.isFinite(timeoutNumber) || timeoutNumber != Math.rint(timeoutNumber)
+            || timeoutNumber < 100 || timeoutNumber > 120000) throw new IllegalArgumentException();
+        deadline = receivedAt + (long) timeoutNumber;
+      } catch (Exception e) {
+        sendResult(webSocket, requestId(text), false, null,
+            error("INVALID_COMMAND", "Command timeout is invalid."));
+        return;
+      }
+      try {
+        commandQueue.execute(() -> handleCommand(webSocket, text, deadline));
       } catch (RejectedExecutionException e) {
         sendResult(
             webSocket,
             requestId(text),
             false,
             null,
-            error("BUSY", "PhoneUse is busy processing earlier commands."));
+            error("BUSY", "Phone Use is busy processing earlier commands."));
       }
     }
 
@@ -330,54 +479,116 @@ public final class ConnectionService extends Service {
 
     @Override
     public void onClosing(WebSocket webSocket, int code, String reason) {
-      if (webSocket != socket) {
-        webSocket.close(1000, null);
-        return;
-      }
-      PhoneState.controlEnabled = false;
-      PhoneAccessibilityService.invalidateForSessionChange();
-      if (code == 1000 || code == 1008) {
-        userStarted = false;
-        stopping = true;
+      synchronized (ConnectionService.this) {
+        if (!owns(attempt)) { webSocket.close(1000, null); return; }
+        PhoneState.controlEnabled = false;
+        PhoneAccessibilityService.invalidateForSessionChange();
+        if (code == 1000 || code == 1008) {
+          userStarted = false; stopping = true; cancelRetry();
+        }
       }
       webSocket.close(1000, null);
     }
 
     @Override
     public void onClosed(WebSocket webSocket, int code, String reason) {
-      if (webSocket == socket) {
-        socket = null;
+      synchronized (ConnectionService.this) {
+        if (!owns(attempt)) return;
+        activeAttempt = null; socket = null;
         PhoneState.controlEnabled = false;
         PhoneAccessibilityService.invalidateForSessionChange();
         if (code == 1000 || code == 1008) {
-          setStatus("Disconnected");
+          retireClient();
+          if (code == 1008 && reason != null && reason.contains("Invalid protocol message")) {
+            terminalFailure = true;
+            setStatus("Update Phone Use on your computer to match this phone app.");
+          } else {
+            setStatus("Disconnected");
+          }
           stopForeground(true);
           stopSelf();
         } else {
           setStatus("Connection lost. Reconnecting");
-          scheduleReconnect();
+          retireClient(); scheduleReconnect();
         }
       }
     }
 
     @Override
     public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-      if (webSocket == socket) {
-        socket = null;
+      synchronized (ConnectionService.this) {
+        if (!owns(attempt)) return;
+        activeAttempt = null; socket = null;
         PhoneState.controlEnabled = false;
         PhoneAccessibilityService.invalidateForSessionChange();
-        setStatus("Connection lost. Reconnecting");
-        scheduleReconnect();
+        if (isTerminalResponse(response) || isTerminalSetupFailure(t)) {
+          terminalFailure = true;
+          retireClient();
+          setStatus(terminalFailureMessage(response, t));
+        } else {
+          setStatus("Connection lost. Reconnecting");
+          retireClient(); scheduleReconnect();
+        }
       }
     }
   }
 
+  /** Returns whether an event belongs to the active connection generation. */
+  private synchronized boolean owns(ConnectionAttempt attempt) {
+    return activeAttempt == attempt && attempt.generation == connectionGeneration;
+  }
+
+  /** Drops the failed attempt's HTTP resources so the next attempt starts with a fresh client. */
+  private synchronized void retireClient() {
+    OkHttpClient old = client; client = null; shutdownClient(old);
+  }
+
+  /** Identifies HTTP authentication/pairing and pinned certificate errors that cannot self-heal. */
+  private static boolean isTerminalResponse(Response response) {
+    if (response == null) return false;
+    int code = response.code();
+    return code == 401 || code == 403 || code == 409;
+  }
+
+  /** Gives actionable recovery steps for permanent pairing and protocol failures. */
+  private static String terminalFailureMessage(Response response, Throwable error) {
+    if (response != null) {
+      if (response.code() == 401 || response.code() == 403)
+        return "Pairing authorization failed. Create a new pairing code and pair again.";
+      if (response.code() == 409)
+        return "Another phone session is connected. Disconnect it, then reconnect this phone.";
+    }
+    for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if (cause instanceof CertificateException || cause instanceof javax.net.ssl.SSLPeerUnverifiedException)
+        return "The paired certificate is invalid. Create a new pairing code and pair again.";
+      if (cause instanceof IllegalArgumentException)
+        return "The pairing address is invalid. Create a new pairing code and pair again.";
+    }
+    return "Pairing failed. Check the pairing code and certificate, then pair again.";
+  }
+
+  /** Identifies malformed pairing URLs and certificate/pin validation failures. */
+  private static boolean isTerminalSetupFailure(Throwable error) {
+    for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if (cause instanceof IllegalArgumentException || cause instanceof CertificateException
+          || cause instanceof javax.net.ssl.SSLPeerUnverifiedException) return true;
+    }
+    return false;
+  }
+
+  /** Represents one generation of a socket connection attempt. */
+  private static final class ConnectionAttempt {
+    final long generation;
+    volatile WebSocket webSocket;
+    ConnectionAttempt(long generation) { this.generation = generation; }
+  }
+
   /** Executes one bounded protocol request and returns a result frame tied to its request id. */
-  private void handleCommand(WebSocket ws, String raw) {
+  private void handleCommand(WebSocket ws, String raw, long deadline) {
     String id = "";
     try {
       if (ws != socket || stopping)
-        throw new ProtocolError("DISCONNECTED", "PhoneUse is disconnected.");
+        throw new ProtocolError("DISCONNECTED", "Phone Use is disconnected.");
       JSONObject req = new JSONObject(raw);
       if (!"command".equals(req.optString("type")))
         throw new ProtocolError("INVALID_COMMAND", "Expected a command frame.");
@@ -387,17 +598,7 @@ public final class ConnectionService extends Service {
       } catch (Exception e) {
         throw new ProtocolError("INVALID_COMMAND", "Command id is invalid.");
       }
-      Object deadlineValue = req.opt("deadline");
-      if (!(deadlineValue instanceof Number))
-        throw new ProtocolError("INVALID_COMMAND", "Command deadline is invalid.");
-      double deadlineNumber = ((Number) deadlineValue).doubleValue();
-      if (!Double.isFinite(deadlineNumber)
-          || deadlineNumber != Math.rint(deadlineNumber)
-          || deadlineNumber > Long.MAX_VALUE
-          || deadlineNumber < Long.MIN_VALUE)
-        throw new ProtocolError("INVALID_COMMAND", "Command deadline is invalid.");
-      long deadline = (long) deadlineNumber;
-      if (deadline <= System.currentTimeMillis())
+      if (deadline <= SystemClock.elapsedRealtime())
         throw new ProtocolError("COMMAND_EXPIRED", "This command has expired.");
       if (req.length() != 5)
         throw new ProtocolError("INVALID_COMMAND", "Command frame contains unknown fields.");
@@ -408,18 +609,23 @@ public final class ConnectionService extends Service {
       PhoneAccessibilityService service = PhoneState.accessibility;
       if (service == null)
         throw new ProtocolError(
-            "ACCESSIBILITY_DISABLED", "Enable PhoneUse accessibility access on your phone.");
+            "ACCESSIBILITY_DISABLED", "Enable Phone Use accessibility access on your phone.");
       if (ws != socket || stopping)
-        throw new ProtocolError("DISCONNECTED", "PhoneUse is disconnected.");
-      if (deadline <= System.currentTimeMillis())
+        throw new ProtocolError("DISCONNECTED", "Phone Use is disconnected.");
+      if (deadline <= SystemClock.elapsedRealtime())
         throw new ProtocolError("COMMAND_EXPIRED", "This command has expired.");
       JSONObject command =
           new JSONObject()
               .put("method", req.getString("method"))
               .put("params", req.getJSONObject("params"));
       JSONObject result = service.runCommand(command, deadline);
-      if (deadline <= System.currentTimeMillis())
+      if (deadline <= SystemClock.elapsedRealtime()) {
+        if ("observe_action".equals(req.getString("method")) && result.optBoolean("performed")) {
+          sendResult(ws, id, true, result, null);
+          return;
+        }
         throw new ProtocolError("COMMAND_EXPIRED", "This command has expired.");
+      }
       sendResult(ws, id, true, result, null);
     } catch (ProtocolError e) {
       sendResult(ws, id, false, null, error(e.code, e.getMessage()));
@@ -431,13 +637,13 @@ public final class ConnectionService extends Service {
     }
   }
 
-  /** Emits the version 1 success or failure envelope, with no internal exception details. */
+  /** Emits the version 2 success or failure envelope, with no internal exception details. */
   private void sendResult(WebSocket ws, String id, boolean ok, JSONObject result, JSONObject err) {
     try {
       JSONObject frame = new JSONObject().put("type", "result").put("id", id).put("ok", ok);
       if (ok) frame.put("result", result);
       else frame.put("error", err);
-      if (ws == socket) ws.send(frame.toString());
+      if (ws == socket && !ws.send(frame.toString())) ws.close(1011, "result send failed");
     } catch (Exception ignored) {
     }
   }

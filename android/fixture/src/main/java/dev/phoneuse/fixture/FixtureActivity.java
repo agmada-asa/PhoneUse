@@ -9,15 +9,17 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.app.AlertDialog;
 
 /**
- * Hosts predictable accessible controls for exercising PhoneUse snapshots and actions on an
+ * Hosts predictable accessible controls for exercising Phone Use snapshots and actions on an
  * emulator.
  */
 public final class FixtureActivity extends Activity {
@@ -50,7 +52,31 @@ public final class FixtureActivity extends Activity {
           });
     }
 
-    content.addView(text("PhoneUse test screen", 24, true));
+    content.addView(text("Phone Use test screen", 24, true));
+    Button dialog = button("Open scope dialog");
+    dialog.setOnClickListener(
+        view -> {
+          AlertDialog alert =
+              new AlertDialog.Builder(this)
+                  .setTitle("Scoped dialog")
+                  .setMessage("This is a separate accessible window.")
+                  .setPositiveButton("Close dialog", (ignored, which) -> {})
+                  .create();
+          alert.show();
+          alert.getButton(AlertDialog.BUTTON_POSITIVE).setAllCaps(false);
+        });
+    content.addView(dialog, margin(0, 8, 0, 8));
+    Button blocked = button("Open Phone Use settings");
+    blocked.setOnClickListener(
+        view ->
+            startActivity(
+                new Intent()
+                    .setClassName("dev.phoneuse.app", "dev.phoneuse.app.MainActivity")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+    content.addView(blocked, margin(0, 0, 0, 8));
+    Button large = button("Open large hierarchy");
+    large.setOnClickListener(view -> startActivity(new Intent(this, LargeActivity.class)));
+    content.addView(large, margin(0, 0, 0, 8));
     content.addView(text("Text entry and button action", 17, true), margin(0, 18, 0, 4));
 
     EditText input = new EditText(this);
@@ -88,10 +114,15 @@ public final class FixtureActivity extends Activity {
     secure.setOnClickListener(view -> startActivity(new Intent(this, SecureActivity.class)));
     content.addView(secure, margin(0, 0, 0, 16));
 
-    content.addView(text("Scrollable content", 17, true), margin(0, 4, 0, 4));
+    LinearLayout listSection = new LinearLayout(this);
+    listSection.setId(R.id.scroll_section);
+    listSection.setOrientation(LinearLayout.VERTICAL);
+    listSection.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+    listSection.addView(text("Scrollable content", 17, true), margin(0, 4, 0, 4));
     for (int i = 1; i <= 30; i++) {
-      content.addView(text("List item " + i, 16, false), margin(0, 7, 0, 7));
+      listSection.addView(text("List item " + i, 16, false), margin(0, 7, 0, 7));
     }
+    content.addView(listSection);
     setContentView(scroller);
   }
 
