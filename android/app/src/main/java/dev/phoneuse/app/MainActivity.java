@@ -582,11 +582,17 @@ public final class MainActivity extends Activity {
         primaryAction.setOnClickListener(v -> startQrScan());
         break;
       case DISCONNECTED:
-        setPill("Disconnected", sunk, muted);
-        headline.setText("Ready to connect");
-        detail.setText(
-            "Paired with " + address + ". Connecting lets the computer see that this phone is"
-                + " available. It can't do anything until you allow control.");
+        if (!"Disconnected".equals(PhoneState.connectionStatus)) {
+          setPill("Connection problem", warnSoft, warn);
+          headline.setText("Connection needs attention");
+          detail.setText(PhoneState.connectionStatus);
+        } else {
+          setPill("Disconnected", sunk, muted);
+          headline.setText("Ready to connect");
+          detail.setText(
+              "Paired with " + address + ". Connecting lets the computer see that this phone is"
+                  + " available. It can't do anything until you allow control.");
+        }
         primaryAction.setText("Connect");
         primaryAction.setOnClickListener(v -> beginConnection());
         break;

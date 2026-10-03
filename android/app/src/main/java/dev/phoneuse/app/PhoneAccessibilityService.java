@@ -22,6 +22,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Comparator;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +40,13 @@ import org.json.JSONObject;
 public final class PhoneAccessibilityService extends AccessibilityService {
   /** Hard traversal and text bounds for one semantic observation. */
   private static final int NODE_LIMIT = 500, TEXT_LIMIT = 300;
+  /** Limits total work, including queued children, for one semantic observation. */
+  private static final int VISIT_LIMIT = 5000;
+  /** Hard cap on main-thread accessibility traversal time, independent of command timeout. */
+  private static final long TRAVERSAL_BUDGET_MS = 750;
+
+  /** Leaves a short safety pass and serialization margin after the traversal budget. */
+  private static final long SNAPSHOT_BUDGET_MS = 1500;
 
   /** Main-thread handler for framework accessibility reads and actions. */
   private final Handler main = new Handler(Looper.getMainLooper());
@@ -51,8 +63,11 @@ public final class PhoneAccessibilityService extends AccessibilityService {
   /** App package for each retained node, checked before semantic actions. */
   private final List<String> lastNodeWindows = new ArrayList<>();
 
-  /** Package represented by the latest active-window semantic observation. */
-  private String observedPackageName = "";
+  /** Android window identity paired with each retained node. */
+  private final List<Integer> lastNodeWindowIds = new ArrayList<>();
+
+  /** Most recent accessibility event time, used for bounded post-action settling. */
+  private volatile long lastRelevantEventAt = SystemClock.elapsedRealtime();
 
   /** Earliest next screenshot time, enforced on the serialized command worker. */
   private long lastScreenshotAt;
@@ -65,7 +80,6 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     generation++;
     clearLastNodes();
     lastSnapshot = null;
-    observedPackageName = "";
     ConnectionService.publishLocalStatus();
   }
 
@@ -76,17 +90,17 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     boolean windowTransition =
         type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED;
-    CharSequence eventPackage = event.getPackageName();
-    boolean observedContentChange =
-        (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-                || type == AccessibilityEvent.TYPE_VIEW_SCROLLED)
-            && eventPackage != null
-            && eventPackage.toString().equals(observedPackageName);
-    if (windowTransition || observedContentChange) {
+    boolean contentChange = type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        || type == AccessibilityEvent.TYPE_VIEW_SCROLLED
+        || type == AccessibilityEvent.TYPE_VIEW_CLICKED
+        || type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+        || type == AccessibilityEvent.TYPE_VIEW_FOCUSED;
+    if (windowTransition || contentChange)
+      lastRelevantEventAt = SystemClock.elapsedRealtime();
+    if (windowTransition || contentChange) {
       generation++;
       clearLastNodes();
       lastSnapshot = null;
-      observedPackageName = "";
     }
   }
 
@@ -95,7 +109,6 @@ public final class PhoneAccessibilityService extends AccessibilityService {
   public void onInterrupt() {
     clearLastNodes();
     lastSnapshot = null;
-    observedPackageName = "";
     PhoneState.controlEnabled = false;
     generation++;
     ConnectionService.publishLocalStatus();
@@ -106,7 +119,6 @@ public final class PhoneAccessibilityService extends AccessibilityService {
   public boolean onUnbind(android.content.Intent intent) {
     clearLastNodes();
     lastSnapshot = null;
-    observedPackageName = "";
     PhoneState.accessibility = null;
     PhoneState.controlEnabled = false;
     generation++;
@@ -118,7 +130,6 @@ public final class PhoneAccessibilityService extends AccessibilityService {
   public void onDestroy() {
     clearLastNodes();
     lastSnapshot = null;
-    observedPackageName = "";
     PhoneState.accessibility = null;
     PhoneState.controlEnabled = false;
     generation++;
@@ -135,7 +146,6 @@ public final class PhoneAccessibilityService extends AccessibilityService {
           () -> {
             service.clearLastNodes();
             service.lastSnapshot = null;
-            service.observedPackageName = "";
           });
     }
   }
@@ -160,7 +170,7 @@ public final class PhoneAccessibilityService extends AccessibilityService {
               });
       JSONObject captured;
       try {
-        captured = screenshot();
+        captured = screenshot(commandParams);
       } catch (CommandFailure e) {
         throw e;
       } catch (Exception e) {
@@ -201,17 +211,21 @@ public final class PhoneAccessibilityService extends AccessibilityService {
       checkDeadline(deadline);
       return new JSONObject().put("performed", true);
     }
+    if ("observe_action".equals(method)) return observeAction(commandParams, deadline);
     return onMain(
         () -> {
           checkDeadline(deadline);
-          enforceLocalGuards();
+          if ("snapshot".equals(method)) enforceControlBasics();
+          else enforceLocalGuards();
           switch (method) {
             case "snapshot":
-              return snapshot();
+              return snapshot(commandParams, deadline);
             case "click":
               return click(commandParams);
             case "set_text":
               return setText(commandParams);
+            case "scroll":
+              return scroll(commandParams);
             case "global_action":
               return globalAction(commandParams);
             default:
@@ -220,10 +234,109 @@ public final class PhoneAccessibilityService extends AccessibilityService {
         });
   }
 
+  /** Executes one validated action, then waits for a bounded quiet period before observing. */
+  private JSONObject observeAction(JSONObject params, long deadline) throws Exception {
+    JSONObject action = params.getJSONObject("action");
+    String method = action.getString("method");
+    JSONObject actionParams = action.getJSONObject("params");
+    validateProperties(method, actionParams);
+    if ("observe_action".equals(method) || "screenshot".equals(method) || "snapshot".equals(method))
+      throw invalid("The observed action must change or navigate the screen.");
+    int quietMs = params.has("quietMs") ? integer(params, "quietMs", true) : 200;
+    int maxWaitMs = params.has("maxWaitMs") ? integer(params, "maxWaitMs", true) : 2000;
+    if (quietMs < 100 || quietMs > 1000 || maxWaitMs < 200 || maxWaitMs > 3000
+        || quietMs > maxWaitMs)
+      throw invalid("Observation timing is outside its allowed range.");
+
+    runCommand(new JSONObject().put("method", method).put("params", actionParams), deadline);
+    try {
+      long waitStarted = SystemClock.elapsedRealtime();
+      long quietSince = Math.max(waitStarted, lastRelevantEventAt);
+      while (true) {
+        try {
+          onMain(() -> {
+            checkDeadline(deadline);
+            enforceLocalGuards();
+            return Boolean.TRUE;
+          });
+          long now = SystemClock.elapsedRealtime();
+          quietSince = Math.max(quietSince, lastRelevantEventAt);
+          boolean settled = now - quietSince >= quietMs;
+          if (settled || now - waitStarted >= maxWaitMs) {
+            // Snapshot owns both the initial root policy check and the final safety pass.
+            JSONObject observed = onMain(() -> {
+              checkDeadline(deadline);
+              enforceControlBasics();
+              return snapshot(new JSONObject(), deadline);
+            });
+            return new JSONObject().put("performed", true)
+                .put("observation", new JSONObject().put("ok", true)
+                    .put("snapshot", observed).put("settled", settled));
+          }
+        } catch (CommandFailure e) {
+          if (!"APP_BLOCKED".equals(e.code)
+              || SystemClock.elapsedRealtime() - waitStarted >= maxWaitMs)
+            return observationFailure(e.code, e.getMessage());
+          // Disappearing windows can briefly have no root. Wait without observing or acting.
+          quietSince = SystemClock.elapsedRealtime();
+        }
+        Thread.sleep(50);
+      }
+    } catch (CommandFailure e) {
+      return observationFailure(e.code, e.getMessage());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return observationFailure("ACTION_CANCELLED", "Observation was interrupted after the action completed.");
+    } catch (Exception e) {
+      return observationFailure("CAPTURE_FAILED", "The screen could not be observed after the action completed.");
+    }
+  }
+
+  /** Builds a safe post-action observation failure without changing action success. */
+  private static JSONObject observationFailure(String code, String message) throws Exception {
+    JSONObject error = new JSONObject().put("code", code).put("message", message);
+    return new JSONObject()
+        .put("performed", true)
+        .put("observation", new JSONObject().put("ok", false).put("error", error));
+  }
+
   /**
    * Ensures consent, service availability, lock state and every visible window's package policy.
    */
   private void enforceLocalGuards() throws CommandFailure {
+    enforceControlBasics();
+    Set<String> blocked = getBlockedPackages();
+    List<AccessibilityWindowInfo> windows = getWindows();
+    if (windows == null || windows.isEmpty())
+      throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+    boolean activeRootFound = false;
+    try {
+      for (AccessibilityWindowInfo window : windows) {
+        AccessibilityNodeInfo root = null;
+        try {
+          root = window.getRoot();
+          if (root == null)
+            throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+          CharSequence packageName = root.getPackageName();
+          if (packageName == null || packageName.length() == 0)
+            throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+          if (window.isActive()) activeRootFound = true;
+          if (PhoneState.OWN_PACKAGE.equals(packageName.toString())
+              || blocked.contains(packageName.toString()))
+            throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+        } finally {
+          if (root != null) root.recycle();
+        }
+      }
+    } finally {
+      for (AccessibilityWindowInfo window : windows) if (window != null) window.recycle();
+    }
+    if (!activeRootFound)
+      throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+  }
+
+  /** Checks phone-side consent, service, and lock state without fetching windows. */
+  private void enforceControlBasics() throws CommandFailure {
     if (!PhoneState.controlEnabled)
       throw new CommandFailure("CONTROL_DISABLED", "Enable control on your phone.");
     if (!PhoneState.accessibilityEnabled(this) || PhoneState.accessibility != this)
@@ -233,27 +346,6 @@ public final class PhoneAccessibilityService extends AccessibilityService {
         (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
     if (keyguard != null && keyguard.isKeyguardLocked())
       throw new CommandFailure("SCREEN_LOCKED", "Unlock your phone before controlling it.");
-    Set<String> blocked = getBlockedPackages();
-    List<AccessibilityWindowInfo> windows = getWindows();
-    if (windows == null || windows.isEmpty())
-      throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
-    boolean activeRootFound = false;
-    for (AccessibilityWindowInfo window : windows) {
-      AccessibilityNodeInfo root = window.getRoot();
-      if (root == null)
-        throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
-      CharSequence packageName = root.getPackageName();
-      if (packageName == null || packageName.length() == 0)
-        throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
-      if (window.isActive()) activeRootFound = true;
-      if (packageName != null
-          && (PhoneState.OWN_PACKAGE.equals(packageName.toString())
-              || blocked.contains(packageName.toString()))) {
-        throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
-      }
-    }
-    if (!activeRootFound)
-      throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
   }
 
   /** Returns the phone-local package blocklist, always including PhoneUse itself. */
@@ -266,89 +358,286 @@ public final class PhoneAccessibilityService extends AccessibilityService {
   }
 
   /** Builds a bounded semantic snapshot and retains node references only for this UI generation. */
-  private JSONObject snapshot() throws Exception {
-    AccessibilityWindowInfo active = null;
-    for (AccessibilityWindowInfo w : getWindows())
-      if (w.isActive()) {
-        active = w;
-        break;
-      }
-    AccessibilityNodeInfo root = active == null ? getRootInActiveWindow() : active.getRoot();
-    if (root == null)
-      throw new CommandFailure("CAPTURE_FAILED", "The current screen could not be inspected.");
-    String packageName = root.getPackageName() == null ? "" : root.getPackageName().toString();
+  private JSONObject snapshot(JSONObject params, long deadline) throws Exception {
+    long startGeneration = generation;
+    long traversalStarted = SystemClock.elapsedRealtime();
     android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
     getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRealMetrics(metrics);
-    long startGeneration = generation;
+    Integer requestedWindow = params.has("windowId") ? integer(params, "windowId", true) : null;
+    JSONObject rootScope = params.optJSONObject("root");
+    if (requestedWindow != null && rootScope != null)
+      throw invalid("Choose either a window or a node root.");
+    AccessibilityNodeInfo scopedRoot = null;
+    boolean scopedRootTraversed = false;
+    int scopedWindow = -1;
+    String packageName = "";
+    if (rootScope != null) {
+      String sid = requiredString(rootScope, "snapshotId"), nid = requiredString(rootScope, "nodeId");
+      try { UUID.fromString(sid); } catch (IllegalArgumentException e) { throw invalid("Snapshot id is invalid."); }
+      JSONObject rootParams = new JSONObject().put("snapshotId", sid).put("nodeId", nid);
+      AccessibilityNodeInfo prior = staleCheckedNode(rootParams);
+      scopedRoot = AccessibilityNodeInfo.obtain(prior);
+      int index = Integer.parseInt(nid);
+      scopedWindow = lastNodeWindowIds.get(index);
+      packageName = lastNodeWindows.get(index);
+    }
+    List<AccessibilityWindowInfo> windows = getWindows();
+    if (windows == null || windows.isEmpty()) {
+      if (scopedRoot != null) scopedRoot.recycle();
+      throw new CommandFailure("CAPTURE_FAILED", "The current screen could not be inspected.");
+    }
+    JSONArray windowJson = new JSONArray();
     JSONArray nodes = new JSONArray();
+    ArrayList<NodeCandidate> candidates = new ArrayList<>();
+    int admissions = 0, visited = 0;
+    boolean truncated = false;
+    boolean selectedWindowFound = false;
+    boolean activeRootFound = false;
+    Set<String> blockedPackages = getBlockedPackages();
+    Set<AccessibilityNodeInfo> seenNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    ArrayList<AccessibilityNodeInfo> visitedHandles = new ArrayList<>();
+    Set<Integer> contextWindows = new HashSet<>();
+    try {
+      for (AccessibilityWindowInfo window : windows) {
+        checkDeadline(deadline);
+        AccessibilityNodeInfo root = null;
+        try {
+          root = window.getRoot();
+          if (root == null)
+            throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+          CharSequence pkg = root.getPackageName();
+          String windowPackage = pkg == null ? "" : pkg.toString();
+          if (windowPackage.isEmpty() || blockedPackages.contains(windowPackage))
+            throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+          if (window.isActive()) activeRootFound = true;
+          if (window.isActive()) packageName = windowPackage;
+          Rect wb = new Rect();
+          window.getBoundsInScreen(wb);
+          boolean listedWindow = windowJson.length() < 32;
+          if (listedWindow) windowJson.put(new JSONObject()
+              .put("id", window.getId()).put("type", window.getType())
+              .put("active", window.isActive()).put("focused", window.isFocused())
+              .put("bounds", boundsJson(wb)));
+          else truncated = true;
+          boolean selected = requestedWindow == null && rootScope == null
+              ? true
+              : requestedWindow != null && requestedWindow == window.getId()
+                  || rootScope != null && scopedWindow == window.getId();
+          if (!selected) continue;
+          if (!listedWindow) continue;
+          selectedWindowFound = true;
+          if (packageName.isEmpty()) packageName = windowPackage;
+          if (admissions >= VISIT_LIMIT
+              || SystemClock.elapsedRealtime() - traversalStarted >= TRAVERSAL_BUDGET_MS) {
+            truncated = true;
+            continue;
+          }
+          ArrayDeque<QueuedNode> queue = new ArrayDeque<>();
+          AccessibilityNodeInfo walkRoot = rootScope == null ? AccessibilityNodeInfo.obtain(root) : null;
+          if (rootScope != null && scopedWindow == window.getId()) {
+            walkRoot = scopedRoot;
+            scopedRootTraversed = true;
+          }
+          if (walkRoot == null) continue;
+          queue.add(new QueuedNode(walkRoot, null, window.getId(), windowPackage));
+          admissions++;
+          try {
+            while (!queue.isEmpty() && visited < VISIT_LIMIT) {
+              checkDeadline(deadline);
+              if (SystemClock.elapsedRealtime() - traversalStarted >= TRAVERSAL_BUDGET_MS) {
+                truncated = true;
+                break;
+              }
+              QueuedNode queued = queue.removeFirst();
+              AccessibilityNodeInfo node = queued.node;
+              visited++;
+              if (!seenNodes.add(node)) { node.recycle(); continue; }
+              visitedHandles.add(node);
+              Rect bounds = new Rect();
+              node.getBoundsInScreen(bounds);
+              boolean password = node.isPassword();
+              int childCount = password ? 0 : node.getChildCount();
+              NodeCandidate candidate = null;
+              if (node.isVisibleToUser()
+                  && bounds.intersect(0, 0, metrics.widthPixels, metrics.heightPixels)
+                  && bounds.width() > 0 && bounds.height() > 0) {
+                candidate = new NodeCandidate(node, queued.parent, queued.windowId, queued.packageName, bounds, candidates.size(), childCount > 0);
+                candidates.add(candidate);
+                boolean actionable = node.isEnabled() && (node.isClickable() || node.isEditable() || node.isScrollable());
+                boolean labeled = (node.getText() != null && node.getText().length() > 0)
+                    || (node.getContentDescription() != null && node.getContentDescription().length() > 0);
+                boolean rootContext = queued.parent == null;
+                boolean containerContext = !rootContext && queued.parent.parent == null
+                    && childCount > 0 && !contextWindows.contains(queued.windowId);
+                candidate.score = (actionable ? 10000 : labeled ? 1000 : 0)
+                    + (node.isEnabled() ? 100 : 0)
+                    + (rootContext ? 100000 : containerContext ? 90000 : 0);
+                if (containerContext) contextWindows.add(queued.windowId);
+              }
+              for (int i = 0; i < childCount; i++) {
+                if (admissions >= VISIT_LIMIT
+                    || SystemClock.elapsedRealtime() - traversalStarted >= TRAVERSAL_BUDGET_MS) {
+                  truncated = true;
+                  break;
+                }
+                admissions++;
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child == null) continue;
+                queue.addLast(new QueuedNode(child, candidate == null ? queued.parent : candidate,
+                    queued.windowId, queued.packageName));
+              }
+              if (admissions >= VISIT_LIMIT && !queue.isEmpty()) truncated = true;
+            }
+          } finally {
+            while (!queue.isEmpty()) queue.removeFirst().node.recycle();
+          }
+          if (visited >= VISIT_LIMIT) truncated = true;
+          if (SystemClock.elapsedRealtime() - traversalStarted >= TRAVERSAL_BUDGET_MS) truncated = true;
+        } finally {
+          if (root != null) root.recycle();
+        }
+      }
+    } catch (Exception failure) {
+      Set<AccessibilityNodeInfo> candidateNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+      for (NodeCandidate candidate : candidates) candidateNodes.add(candidate.node);
+      for (AccessibilityNodeInfo node : visitedHandles) if (!candidateNodes.contains(node)) node.recycle();
+      for (NodeCandidate candidate : candidates) recycleCandidate(candidate);
+      throw failure;
+    } finally {
+      if (scopedRoot != null && !scopedRootTraversed) scopedRoot.recycle();
+      for (AccessibilityWindowInfo window : windows) if (window != null) window.recycle();
+    }
+    Set<AccessibilityNodeInfo> candidateNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    for (NodeCandidate candidate : candidates) candidateNodes.add(candidate.node);
+    for (AccessibilityNodeInfo node : visitedHandles) if (!candidateNodes.contains(node)) node.recycle();
+    if (SystemClock.elapsedRealtime() - traversalStarted >= SNAPSHOT_BUDGET_MS) {
+      for (NodeCandidate candidate : candidates) recycleCandidate(candidate);
+      throw new CommandFailure("CAPTURE_TIMEOUT", "Screen inspection exceeded its time limit.");
+    }
+    if (!activeRootFound) {
+      for (NodeCandidate candidate : candidates) recycleCandidate(candidate);
+      throw new CommandFailure("APP_BLOCKED", "Phone control is unavailable on this screen.");
+    }
+    if (!selectedWindowFound) {
+      for (NodeCandidate candidate : candidates) recycleCandidate(candidate);
+      throw new CommandFailure(rootScope == null ? "INVALID_PARAMS" : "STALE_SNAPSHOT",
+          rootScope == null ? "The requested window is no longer available." : "Observe the phone again before acting.");
+    }
+    truncated |= selectCandidates(candidates);
     clearLastNodes();
     lastSnapshot = null;
-    observedPackageName = "";
-    ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
-    queue.add(root);
-    Set<AccessibilityNodeInfo> seen = new HashSet<>();
-    int visited = 0;
-    while (!queue.isEmpty() && lastNodes.size() < NODE_LIMIT && visited < 5000) {
-      AccessibilityNodeInfo node = queue.removeFirst();
-      visited++;
-      if (!seen.add(node)) continue;
-      Rect bounds = new Rect();
-      node.getBoundsInScreen(bounds);
-      String nodePackage =
-          node.getPackageName() == null ? packageName : node.getPackageName().toString();
-      boolean password = node.isPassword();
-      if (node.isVisibleToUser()
-          && bounds.intersect(0, 0, metrics.widthPixels, metrics.heightPixels)
-          && bounds.width() > 0
-          && bounds.height() > 0) {
-        JSONObject item = new JSONObject();
-        String id = Integer.toString(lastNodes.size());
-        item.put("id", id);
-        putBounded(item, "text", password ? null : node.getText());
-        if (!password) putBounded(item, "description", node.getContentDescription());
+    lastNodeWindowIds.clear();
+    String snapshotId = UUID.randomUUID().toString();
+    HashMap<NodeCandidate, String> ids = new HashMap<>();
+    for (int i = 0; i < candidates.size(); i++) ids.put(candidates.get(i), Integer.toString(i));
+    try {
+      for (int i = 0; i < candidates.size(); i++) {
+        if (SystemClock.elapsedRealtime() - traversalStarted >= SNAPSHOT_BUDGET_MS)
+          throw new CommandFailure("CAPTURE_TIMEOUT", "Screen inspection exceeded its time limit.");
+        NodeCandidate c = candidates.get(i);
+        AccessibilityNodeInfo node = c.node;
+        JSONObject item = new JSONObject().put("id", Integer.toString(i)).put("windowId", c.windowId);
+        NodeCandidate ancestor = c.parent;
+        while (ancestor != null && (!ids.containsKey(ancestor) || ancestor.windowId != c.windowId)) ancestor = ancestor.parent;
+        if (ancestor != null) item.put("parentId", ids.get(ancestor));
+        putBounded(item, "text", node.isPassword() ? null : node.getText());
+        if (!node.isPassword()) putBounded(item, "description", node.getContentDescription());
         putBounded(item, "viewId", node.getViewIdResourceName());
         putBounded(item, "className", node.getClassName());
-        item.put(
-            "bounds",
-            new JSONObject()
-                .put("left", bounds.left)
-                .put("top", bounds.top)
-                .put("right", bounds.right)
-                .put("bottom", bounds.bottom));
-        item.put("clickable", node.isClickable());
-        item.put("editable", node.isEditable() && !password);
-        item.put("scrollable", node.isScrollable());
-        item.put("enabled", node.isEnabled());
+        item.put("bounds", boundsJson(c.bounds));
+        item.put("clickable", node.isClickable()).put("editable", node.isEditable() && !node.isPassword())
+            .put("scrollable", node.isScrollable()).put("enabled", node.isEnabled());
+        item.put("actions", actionsJson(node));
+        AccessibilityNodeInfo.CollectionInfo collection = node.getCollectionInfo();
+        if (collection != null) item.put("collection", new JSONObject().put("rows", Math.max(0, collection.getRowCount())).put("columns", Math.max(0, collection.getColumnCount())));
         nodes.put(item);
         lastNodes.add(AccessibilityNodeInfo.obtain(node));
-        lastNodeWindows.add(nodePackage);
+        lastNodeWindows.add(c.packageName);
+        lastNodeWindowIds.add(c.windowId);
       }
-      if (!password)
-        for (int i = 0; i < node.getChildCount() && visited < 5000; i++) {
-          AccessibilityNodeInfo child = node.getChild(i);
-          if (child != null) queue.addLast(child);
-        }
+      try {
+        enforceLocalGuards();
+        if (SystemClock.elapsedRealtime() - traversalStarted >= SNAPSHOT_BUDGET_MS)
+          throw new CommandFailure("CAPTURE_TIMEOUT", "Screen inspection exceeded its time limit.");
+        if (startGeneration != generation)
+          throw new CommandFailure("STALE_SNAPSHOT", "The screen changed during observation. Observe again.");
+      } catch (CommandFailure failure) {
+        clearLastNodes();
+        lastSnapshot = null;
+        throw failure;
+      }
+      lastSnapshot = new JSONObject().put("snapshotId", snapshotId).put("packageName", packageName)
+          .put("screen", new JSONObject().put("width", metrics.widthPixels).put("height", metrics.heightPixels))
+          .put("windows", windowJson).put("nodes", nodes).put("truncated", truncated);
+      snapshotGeneration = generation;
+      return new JSONObject(lastSnapshot.toString());
+    } catch (Exception failure) {
+      clearLastNodes();
+      lastSnapshot = null;
+      throw failure;
+    } finally {
+      for (NodeCandidate candidate : candidates) recycleCandidate(candidate);
     }
-    boolean truncated = !queue.isEmpty() || visited >= 5000;
-    String snapshotId = UUID.randomUUID().toString();
-    long madeAt = generation;
-    if (startGeneration != madeAt)
-      throw new CommandFailure(
-          "STALE_SNAPSHOT", "The screen changed during observation. Observe again.");
-    lastSnapshot =
-        new JSONObject()
-            .put("snapshotId", snapshotId)
-            .put("packageName", packageName)
-            .put(
-                "screen",
-                new JSONObject()
-                    .put("width", metrics.widthPixels)
-                    .put("height", metrics.heightPixels))
-            .put("nodes", nodes)
-            .put("truncated", truncated);
-    snapshotGeneration = madeAt;
-    observedPackageName = packageName;
-    return new JSONObject(lastSnapshot.toString());
+  }
+
+  /** Reserves bounded window/container context without allowing it to crowd out useful controls. */
+  private static boolean selectCandidates(ArrayList<NodeCandidate> candidates) {
+    if (candidates.size() <= NODE_LIMIT) return false;
+    Set<NodeCandidate> selected = new java.util.LinkedHashSet<>();
+    // Every traversed window/root scope retains its root for further scoped observations.
+    for (NodeCandidate candidate : candidates)
+      if (candidate.parent == null && selected.size() < 64) selected.add(candidate);
+    for (NodeCandidate candidate : candidates)
+      if (selected.size() < 64 && candidate.hasChildren) selected.add(candidate);
+    candidates.sort(Comparator.comparingInt((NodeCandidate c) -> c.score).reversed().thenComparingInt(c -> c.order));
+    for (NodeCandidate candidate : candidates) {
+      if (selected.size() >= NODE_LIMIT) break;
+      selected.add(candidate);
+    }
+    for (NodeCandidate candidate : candidates) if (!selected.contains(candidate)) recycleCandidate(candidate);
+    candidates.clear();
+    candidates.addAll(selected);
+    return true;
+  }
+
+  /** Formats a screen or window rectangle in physical display pixels. */
+  private static JSONObject boundsJson(Rect bounds) throws Exception {
+    return new JSONObject().put("left", bounds.left).put("top", bounds.top).put("right", bounds.right).put("bottom", bounds.bottom);
+  }
+
+  /** Releases an owned candidate handle at most once, including partial serialization failures. */
+  private static void recycleCandidate(NodeCandidate candidate) {
+    if (candidate.ownsNode) {
+      candidate.ownsNode = false;
+      candidate.node.recycle();
+    }
+  }
+
+  /** Lists only semantic actions supported by this exact node. */
+  private static JSONArray actionsJson(AccessibilityNodeInfo node) throws Exception {
+    JSONArray actions = new JSONArray();
+    if (node.isClickable() && node.isEnabled() && hasAction(node, AccessibilityNodeInfo.ACTION_CLICK)) actions.put("click");
+    if (node.isEditable() && !node.isPassword() && node.isEnabled()
+        && hasAction(node, AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_TEXT.getId())) actions.put("set_text");
+    if (node.isScrollable()) {
+      for (AccessibilityNodeInfo.AccessibilityAction action : node.getActionList()) {
+        int id = action.getId();
+        if (id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) actions.put("scroll_forward");
+        else if (id == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) actions.put("scroll_backward");
+        else if (id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.getId()) actions.put("scroll_up");
+        else if (id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.getId()) actions.put("scroll_down");
+        else if (id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.getId()) actions.put("scroll_left");
+        else if (id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.getId()) actions.put("scroll_right");
+      }
+    }
+    return actions;
+  }
+
+  /** Checks an exact framework action id without inferring support from node flags. */
+  private static boolean hasAction(AccessibilityNodeInfo node, int actionId) {
+    for (AccessibilityNodeInfo.AccessibilityAction action : node.getActionList())
+      if (action.getId() == actionId) return true;
+    return false;
   }
 
   /** Generation associated with the last node snapshot. */
@@ -365,13 +654,15 @@ public final class PhoneAccessibilityService extends AccessibilityService {
   }
 
   /** Captures the default display, scales to 1440 pixels, and encodes bounded PNG data. */
-  private JSONObject screenshot() throws Exception {
+  private JSONObject screenshot(JSONObject params) throws Exception {
     long now = SystemClock.elapsedRealtime();
     if (now - lastScreenshotAt < 1000)
       throw new CommandFailure(
           "RATE_LIMITED", "Wait briefly before requesting another screenshot.");
     lastScreenshotAt = now;
     CountDownLatch latch = new CountDownLatch(1);
+    Object callbackLock = new Object();
+    boolean[] abandoned = new boolean[1];
     final android.accessibilityservice.AccessibilityService.ScreenshotResult[] result =
         new android.accessibilityservice.AccessibilityService.ScreenshotResult[1];
     final Throwable[] failure = new Throwable[1];
@@ -381,8 +672,14 @@ public final class PhoneAccessibilityService extends AccessibilityService {
         new TakeScreenshotCallback() {
           @Override
           public void onSuccess(ScreenshotResult screenshot) {
-            result[0] = screenshot;
-            latch.countDown();
+            synchronized (callbackLock) {
+              if (abandoned[0]) {
+                HardwareBuffer lateBuffer = screenshot.getHardwareBuffer();
+                if (lateBuffer != null) lateBuffer.close();
+              }
+              else result[0] = screenshot;
+              latch.countDown();
+            }
           }
 
           @Override
@@ -391,8 +688,20 @@ public final class PhoneAccessibilityService extends AccessibilityService {
             latch.countDown();
           }
         });
-    if (!latch.await(5, TimeUnit.SECONDS))
-      throw new CommandFailure("CAPTURE_TIMEOUT", "Screen capture timed out.");
+    boolean received = false;
+    try {
+      received = latch.await(5, TimeUnit.SECONDS);
+    } finally {
+      // Interrupted workers also abandon the callback and release any already-arrived buffer.
+      if (!received) {
+        synchronized (callbackLock) {
+          abandoned[0] = true;
+          if (result[0] != null && result[0].getHardwareBuffer() != null)
+            result[0].getHardwareBuffer().close();
+        }
+      }
+    }
+    if (!received) throw new CommandFailure("CAPTURE_TIMEOUT", "Screen capture timed out.");
     if (failure[0] != null)
       throw new CommandFailure("CAPTURE_FAILED", "Screen capture is unavailable for this content.");
     HardwareBuffer buffer = result[0].getHardwareBuffer();
@@ -405,7 +714,8 @@ public final class PhoneAccessibilityService extends AccessibilityService {
       if (source == null)
         throw new CommandFailure("CAPTURE_FAILED", "Screen capture could not be decoded.");
       int width = source.getWidth(), height = source.getHeight(), longest = Math.max(width, height);
-      float scale = Math.min(1f, 1440f / longest);
+      int maxDimension = params.has("maxDimension") ? integer(params, "maxDimension", true) : 1440;
+      float scale = Math.min(1f, maxDimension / (float) longest);
       int outW = Math.max(1, Math.round(width * scale)),
           outH = Math.max(1, Math.round(height * scale));
       scaled = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
@@ -421,7 +731,8 @@ public final class PhoneAccessibilityService extends AccessibilityService {
           .put("mimeType", "image/png")
           .put("data", data)
           .put("width", outW)
-          .put("height", outH);
+          .put("height", outH)
+          .put("screen", new JSONObject().put("width", width).put("height", height));
     } catch (CommandFailure e) {
       throw e;
     } catch (RuntimeException e) {
@@ -439,6 +750,7 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     for (AccessibilityNodeInfo node : lastNodes) if (node != null) node.recycle();
     lastNodes.clear();
     lastNodeWindows.clear();
+    lastNodeWindowIds.clear();
   }
 
   /** Starts a tap or bounded swipe sequence on Android's main thread. */
@@ -597,7 +909,7 @@ public final class PhoneAccessibilityService extends AccessibilityService {
   /** Clicks a node only when its snapshot generation, package, and node identity still match. */
   private JSONObject click(JSONObject p) throws Exception {
     AccessibilityNodeInfo node = staleCheckedNode(p);
-    if (!node.isEnabled() || !node.isClickable())
+    if (!node.isEnabled() || !node.isClickable() || !hasAction(node, AccessibilityNodeInfo.ACTION_CLICK))
       throw new CommandFailure("ACTION_FAILED", "This item cannot be clicked.");
     if (!node.performAction(AccessibilityNodeInfo.ACTION_CLICK))
       throw new CommandFailure("ACTION_FAILED", "The item did not accept the click.");
@@ -609,11 +921,36 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     String text = p.getString("text");
     if (text.length() > 4000) throw invalid("Text is limited to 4000 characters.");
     AccessibilityNodeInfo node = staleCheckedNode(p);
-    if (!node.isEnabled() || !node.isEditable() || node.isPassword())
+    if (!node.isEnabled() || !node.isEditable() || node.isPassword()
+        || !hasAction(node, AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_TEXT.getId()))
       throw new CommandFailure("ACTION_FAILED", "This field cannot accept remote text.");
     BundleCompat bundle = new BundleCompat(text);
     if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle.bundle))
       throw new CommandFailure("ACTION_FAILED", "The field did not accept the text.");
+    return new JSONObject().put("performed", true);
+  }
+
+  /** Performs one advertised directional accessibility scroll action on a current node. */
+  private JSONObject scroll(JSONObject p) throws Exception {
+    String direction = p.getString("direction");
+    AccessibilityNodeInfo node = staleCheckedNode(p);
+    int actionId;
+    switch (direction) {
+      case "forward": actionId = AccessibilityNodeInfo.ACTION_SCROLL_FORWARD; break;
+      case "backward": actionId = AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD; break;
+      case "up": actionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.getId(); break;
+      case "down": actionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.getId(); break;
+      case "left": actionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.getId(); break;
+      case "right": actionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.getId(); break;
+      default: throw invalid("Scroll direction is unsupported.");
+    }
+    boolean advertised = false;
+    for (AccessibilityNodeInfo.AccessibilityAction action : node.getActionList())
+      if (action.getId() == actionId) advertised = true;
+    if (!node.isEnabled() || !node.isScrollable() || !advertised)
+      throw new CommandFailure("ACTION_FAILED", "This item does not support that scroll action.");
+    if (!node.performAction(actionId))
+      throw new CommandFailure("ACTION_FAILED", "The item did not accept the scroll action.");
     return new JSONObject().put("performed", true);
   }
 
@@ -635,17 +972,55 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     AccessibilityNodeInfo node = lastNodes.get(index);
     if (node == null || !node.isVisibleToUser())
       throw new CommandFailure("STALE_SNAPSHOT", "Observe the phone again before acting.");
-    if (!node.refresh())
+    if (!node.refresh() || !node.isVisibleToUser() || !matchesSnapshotNode(node, index))
       throw new CommandFailure("STALE_SNAPSHOT", "Observe the phone again before acting.");
-    AccessibilityNodeInfo active = getRootInActiveWindow();
-    String activePackage =
-        active == null || active.getPackageName() == null ? "" : active.getPackageName().toString();
-    if (!lastSnapshot.optString("packageName").equals(activePackage))
-      throw new CommandFailure("STALE_SNAPSHOT", "Observe the phone again before acting.");
+    AccessibilityWindowInfo nodeWindow = node.getWindow();
+    try {
+      if (nodeWindow == null || nodeWindow.getId() != lastNodeWindowIds.get(index))
+        throw new CommandFailure("STALE_SNAPSHOT", "Observe the phone again before acting.");
+    } finally { if (nodeWindow != null) nodeWindow.recycle(); }
+    boolean windowExists = false;
+    List<AccessibilityWindowInfo> windows = getWindows();
+    if (windows != null) {
+      try {
+        for (AccessibilityWindowInfo window : windows) {
+          if (window.getId() != lastNodeWindowIds.get(index)) continue;
+          AccessibilityNodeInfo root = window.getRoot();
+          try {
+            CharSequence pkg = root == null ? null : root.getPackageName();
+            windowExists = pkg != null && lastNodeWindows.get(index).equals(pkg.toString());
+          } finally { if (root != null) root.recycle(); }
+        }
+      } finally { for (AccessibilityWindowInfo window : windows) if (window != null) window.recycle(); }
+    }
+    if (!windowExists) throw new CommandFailure("STALE_SNAPSHOT", "Observe the phone again before acting.");
     CharSequence current = node.getPackageName();
-    if (current != null && !lastNodeWindows.get(index).equals(current.toString()))
+    if (current == null || !lastNodeWindows.get(index).equals(current.toString()))
       throw new CommandFailure("STALE_SNAPSHOT", "Observe the phone again before acting.");
     return node;
+  }
+
+  /** Rejects changed target content or geometry even when its accessibility event is still queued. */
+  private boolean matchesSnapshotNode(AccessibilityNodeInfo node, int index) throws Exception {
+    JSONObject expected = lastSnapshot.getJSONArray("nodes").getJSONObject(index);
+    JSONObject current = new JSONObject();
+    putBounded(current, "text", node.isPassword() ? null : node.getText());
+    putBounded(current, "description", node.isPassword() ? null : node.getContentDescription());
+    putBounded(current, "viewId", node.getViewIdResourceName());
+    putBounded(current, "className", node.getClassName());
+    for (String field : List.of("text", "description", "viewId", "className"))
+      if (!expected.optString(field, "").equals(current.optString(field, ""))) return false;
+    Rect actual = new Rect();
+    node.getBoundsInScreen(actual);
+    JSONObject display = lastSnapshot.getJSONObject("screen");
+    if (!actual.intersect(0, 0, display.getInt("width"), display.getInt("height"))) return false;
+    JSONObject bounds = expected.getJSONObject("bounds");
+    return actual.left == bounds.getInt("left") && actual.top == bounds.getInt("top")
+        && actual.right == bounds.getInt("right") && actual.bottom == bounds.getInt("bottom")
+        && expected.getBoolean("clickable") == node.isClickable()
+        && expected.getBoolean("editable") == (node.isEditable() && !node.isPassword())
+        && expected.getBoolean("scrollable") == node.isScrollable()
+        && expected.getBoolean("enabled") == node.isEnabled();
   }
 
   /** Performs only the three protocol-defined Android global actions. */
@@ -675,7 +1050,24 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     Set<String> allowed = new HashSet<>();
     switch (method) {
       case "snapshot":
+        allowed.add("windowId"); allowed.add("root");
+        if (p.has("windowId") && p.has("root")) throw invalid("Choose either a window or a node root.");
+        if (p.has("windowId") && integer(p, "windowId", true) < 0) throw invalid("Window id must be nonnegative.");
+        if (p.has("root")) {
+          JSONObject root = p.optJSONObject("root");
+          if (root == null) throw invalid("Snapshot root is invalid.");
+          rejectUnknown(root, Set.of("snapshotId", "nodeId"));
+          try { UUID.fromString(requiredString(root, "snapshotId")); }
+          catch (IllegalArgumentException e) { throw invalid("Snapshot id is invalid."); }
+          requiredString(root, "nodeId");
+        }
+        break;
       case "screenshot":
+        allowed.add("maxDimension");
+        if (p.has("maxDimension")) {
+          int dimension = integer(p, "maxDimension", true);
+          if (dimension < 320 || dimension > 1440) throw invalid("Screenshot maxDimension must be from 320 to 1440.");
+        }
         break;
       case "tap":
         allowed.add("x");
@@ -696,6 +1088,12 @@ public final class PhoneAccessibilityService extends AccessibilityService {
         allowed.add("snapshotId");
         allowed.add("nodeId");
         allowed.add("text");
+        break;
+      case "scroll":
+        allowed.add("snapshotId"); allowed.add("nodeId"); allowed.add("direction");
+        break;
+      case "observe_action":
+        allowed.add("action"); allowed.add("quietMs"); allowed.add("maxWaitMs");
         break;
       case "global_action":
         allowed.add("action");
@@ -731,9 +1129,37 @@ public final class PhoneAccessibilityService extends AccessibilityService {
         if (!p.has("text") || !(p.get("text") instanceof String))
           throw invalid("Text must be a string.");
         break;
+      case "scroll":
+        requiredString(p, "snapshotId"); requiredString(p, "nodeId");
+        if (!Set.of("forward", "backward", "up", "down", "left", "right").contains(requiredString(p, "direction")))
+          throw invalid("Scroll direction is unsupported.");
+        break;
+      case "observe_action":
+        JSONObject nested = p.optJSONObject("action");
+        if (nested == null) throw invalid("Observed action is invalid.");
+        rejectUnknown(nested, Set.of("method", "params"));
+        String nestedMethod = requiredString(nested, "method");
+        if (!(nested.opt("params") instanceof JSONObject)) throw invalid("Observed action parameters are invalid.");
+        if (Set.of("observe_action", "snapshot", "screenshot").contains(nestedMethod))
+          throw invalid("The observed action must change or navigate the screen.");
+        validateProperties(nestedMethod, nested.getJSONObject("params"));
+        if (p.has("quietMs")) integer(p, "quietMs", true);
+        if (p.has("maxWaitMs")) integer(p, "maxWaitMs", true);
+        break;
       case "global_action":
         requiredString(p, "action");
+        break;
+      case "snapshot":
+      case "screenshot":
+        break;
     }
+  }
+
+  /** Rejects unexpected keys in nested protocol objects. */
+  private static void rejectUnknown(JSONObject object, Set<String> allowed) throws Exception {
+    JSONArray names = object.names();
+    if (names != null) for (int i = 0; i < names.length(); i++)
+      if (!allowed.contains(names.getString(i))) throw invalid("Command contains an unknown parameter.");
   }
 
   /** Creates a typed parameter validation error. */
@@ -741,10 +1167,37 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     return new CommandFailure("INVALID_PARAMS", message);
   }
 
-  /** Stops work whose desktop deadline expired while it waited in the serialized queue. */
+  /** Stops work whose local monotonic execution budget expired while queueing or executing. */
   private static void checkDeadline(long deadline) throws CommandFailure {
-    if (deadline <= System.currentTimeMillis())
+    if (deadline <= SystemClock.elapsedRealtime())
       throw new CommandFailure("COMMAND_EXPIRED", "This command has expired.");
+  }
+
+  /** One queued accessibility handle plus the nearest included ancestor. */
+  private static final class QueuedNode {
+    final AccessibilityNodeInfo node;
+    final NodeCandidate parent;
+    final int windowId;
+    final String packageName;
+    QueuedNode(AccessibilityNodeInfo node, NodeCandidate parent, int windowId, String packageName) {
+      this.node = node; this.parent = parent; this.windowId = windowId; this.packageName = packageName;
+    }
+  }
+
+  /** A visible node retained until the most useful 500 entries have been selected. */
+  private static final class NodeCandidate {
+    final AccessibilityNodeInfo node;
+    final NodeCandidate parent;
+    final int windowId, order;
+    final String packageName;
+    final Rect bounds;
+    final boolean hasChildren;
+    int score;
+    boolean ownsNode = true;
+    NodeCandidate(AccessibilityNodeInfo node, NodeCandidate parent, int windowId, String packageName, Rect bounds, int order, boolean hasChildren) {
+      this.node = node; this.parent = parent; this.windowId = windowId; this.packageName = packageName;
+      this.bounds = new Rect(bounds); this.order = order; this.hasChildren = hasChildren;
+    }
   }
 
   /** Reads a finite integer parameter and rejects numeric strings, fractions, and overflow. */
