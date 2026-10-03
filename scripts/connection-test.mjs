@@ -107,7 +107,7 @@ async function uiNodes() {
   });
 }
 
-/** Taps a visible PhoneUse control, scrolling within the local setup screen if needed. */
+/** Taps a visible Phone Use control, scrolling within the local setup screen if needed. */
 async function localTap(text) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const node = (await uiNodes()).find(
@@ -124,7 +124,7 @@ async function localTap(text) {
     else await adb('shell', 'input', 'swipe', '500', '1600', '500', '500', '250');
     await settle(250);
   }
-  throw new Error('A required local PhoneUse control was unavailable.');
+  throw new Error('A required local Phone Use control was unavailable.');
 }
 
 /** Opens the main activity and starts a paired foreground session using the phone UI. */
@@ -226,7 +226,7 @@ async function nextHello(afterIndex, timeoutMs = 10000) {
     () =>
       acceptedConnections.length > afterIndex && acceptedConnections[afterIndex]?.hellos.length > 0,
     timeoutMs,
-    'PhoneUse did not reconnect to the authenticated mock within the expected window.',
+    'Phone Use did not reconnect to the authenticated mock within the expected window.',
   );
   return acceptedConnections[afterIndex];
 }

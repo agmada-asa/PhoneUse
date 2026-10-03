@@ -1,14 +1,14 @@
-# PhoneUse
+# Phone Use
 
 Let a local coding agent use your Android phone over your own Wi-Fi.
 
-PhoneUse is a small Android companion app plus a desktop bridge. The bridge exposes the phone to any MCP-capable agent (tested with Codex) as tools: read the screen, take a screenshot, tap, swipe, type, scroll, and press Back, Home, or Recents. Nothing goes through a cloud relay. The phone connects out to your computer over an encrypted, certificate-pinned LAN connection.
+Phone Use is a small Android companion app plus a desktop bridge. The bridge exposes the phone to any MCP-capable agent (tested with Codex) as tools: read the screen, take a screenshot, tap, swipe, type, scroll, and press Back, Home, or Recents. Nothing goes through a cloud relay. The phone connects out to your computer over an encrypted, certificate-pinned LAN connection.
 
 It started as a weekend experiment, and it is still one. Expect rough edges.
 
 ## What to know first
 
-- **You are giving an AI agent a finger on your phone.** Control is off until you switch it on in the app. It switches off again whenever the phone disconnects. You choose which apps are blocked, and PhoneUse itself is always blocked.
+- **You are giving an AI agent a finger on your phone.** Control is off until you switch it on in the app. It switches off again whenever the phone disconnects. You choose which apps are blocked, and Phone Use itself is always blocked.
 - **Screen content goes to your agent's model provider.** The phone connection stays on your network, but anything the agent reads from the screen is sent to whatever model it uses.
 - **Use a spare phone or a quiet moment first.** Try it on harmless apps before you trust it with anything that matters.
 - **It is a sideloaded debug build, not a Play Store app.** Google Play restricts general autonomous accessibility agents.
@@ -42,11 +42,11 @@ On completion, onboarding prints the APK path and console URL and writes a summa
 
 The console walks through these steps and checks each one off as the phone reports it:
 
-1. **Pair and connect.** In the console, select **Show pairing QR code**. In PhoneUse, select **Scan pairing QR code**, allow camera access, scan the screen, and confirm the computer address. If you cannot use the camera, use **Pair by pasting a code instead** in the console and **Paste a code instead** on the phone. Treat the QR code and pairing text like a password.
-2. **Turn on accessibility.** In PhoneUse, select **Turn on** next to Accessibility and enable the PhoneUse service. If Android shows "Controlled by restricted setting", open **Settings → Apps → PhoneUse → the three-dot menu → Allow restricted settings**, then enable the service again. See [Google's instructions](https://support.google.com/android/answer/12623953?hl=en).
+1. **Pair and connect.** In the console, select **Show pairing QR code**. In Phone Use, select **Scan pairing QR code**, allow camera access, scan the screen, and confirm the computer address. If you cannot use the camera, use **Pair by pasting a code instead** in the console and **Paste a code instead** on the phone. Treat the QR code and pairing text like a password.
+2. **Turn on accessibility.** In Phone Use, select **Turn on** next to Accessibility and enable the Phone Use service. If Android shows "Controlled by restricted setting", open **Settings → Apps → Phone Use → the three-dot menu → Allow restricted settings**, then enable the service again. See [Google's instructions](https://support.google.com/android/answer/12623953?hl=en).
 3. **Protect apps.** Under **Protected apps**, select **Choose apps** and pick the apps the computer must never see or control. **Add by package name** covers apps missing from the launcher list.
 4. **Allow control.** Turn on **Allow this computer to control the phone**.
-5. **Try it.** Leave PhoneUse and open an allowed app. In the console, try **Read screen**, **Take screenshot**, or **Home**. Commands fail while PhoneUse or a protected app is on screen.
+5. **Try it.** Leave Phone Use and open an allowed app. In the console, try **Read screen**, **Take screenshot**, or **Home**. Commands fail while Phone Use or a protected app is on screen.
 
 The phone owner must complete these setup and consent steps directly. To disconnect the phone, use **Disconnect** on the phone, the connection notification, or the console. To stop the desktop bridge, run `npm run stop` from the checkout.
 
@@ -111,8 +111,8 @@ Found a security problem? Please open a private security advisory on GitHub rath
 
 ## Limitations
 
-- The blocklist covers PhoneUse's tools only. It does not stop ADB or another app from reaching the device. It does not hide installed-app identity, protect data inside an allowed app, or cover notifications and recent-app previews from system packages. This is not an OS-wide sandbox. System and vendor surfaces vary by device.
-- PhoneUse cannot bypass your lock screen, biometrics, secure screenshot protection, or other apps' private storage. Text entry works only in editable, non-password fields. Games and custom-drawn interfaces may need coordinate gestures.
+- The blocklist covers Phone Use's tools only. It does not stop ADB or another app from reaching the device. It does not hide installed-app identity, protect data inside an allowed app, or cover notifications and recent-app previews from system packages. This is not an OS-wide sandbox. System and vendor surfaces vary by device.
+- Phone Use cannot bypass your lock screen, biometrics, secure screenshot protection, or other apps' private storage. Text entry works only in editable, non-password fields. Games and custom-drawn interfaces may need coordinate gestures.
 - One phone connects at a time. Control is not remembered across app restarts.
 - Commands run once. A timeout can mean the action happened without confirmation, so the bridge closes the session and never retries an input.
 - Swipes check consent and app policy between segments of at most 75 ms. Revoking control or opening a blocked app stops further movement.
@@ -129,7 +129,7 @@ npm run test:android    # needs the dedicated PhoneUse_Test emulator; see docs/T
 npm run test:android:connection # run after test:android on the same emulator
 ```
 
-Bridge tests cover authentication, browser origin restrictions, command validation, serialization, timeouts, and disconnection. The `android/fixture` module is a harmless test app for emulator checks and is not bundled in the PhoneUse APK. See [android/README.md](android/README.md) for companion details and [docs/PROTOCOL.md](docs/PROTOCOL.md) for the protocol. Protocol version 2 is current, so update the bridge and APK together.
+Bridge tests cover authentication, browser origin restrictions, command validation, serialization, timeouts, and disconnection. The `android/fixture` module is a harmless test app for emulator checks and is not bundled in the Phone Use APK. See [android/README.md](android/README.md) for companion details and [docs/PROTOCOL.md](docs/PROTOCOL.md) for the protocol. Protocol version 2 is current, so update the bridge and APK together.
 
 Restart the bridge and the agent's MCP session after updating, and install the updated APK. Existing pairing credentials can be retained.
 

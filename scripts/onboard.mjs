@@ -146,13 +146,13 @@ export function startOnboardingBridge(root, env, agentConfigured) {
     const timer = setTimeout(
       () =>
         fail(
-          'The PhoneUse console did not start within 15 seconds. Check for a port conflict and run onboarding again.',
+          'The Phone Use console did not start within 15 seconds. Check for a port conflict and run onboarding again.',
         ),
       15_000,
     );
     process.once('SIGINT', onInterrupt);
     process.once('SIGTERM', onInterrupt);
-    child.once('error', () => fail('Could not start the PhoneUse bridge process.'));
+    child.once('error', () => fail('Could not start the Phone Use bridge process.'));
     child.stderr.on('data', (data) => {
       errorOutput = (errorOutput + data.toString()).slice(-4096);
     });
@@ -160,7 +160,7 @@ export function startOnboardingBridge(root, env, agentConfigured) {
       output += data.toString();
 
       if (output.length > 4096) {
-        fail('The PhoneUse bridge returned an invalid readiness record.');
+        fail('The Phone Use bridge returned an invalid readiness record.');
       }
     });
     child.stdout.once('end', () => {
@@ -189,12 +189,12 @@ export function startOnboardingBridge(root, env, agentConfigured) {
         cleanup();
         resolve(ready);
       } catch {
-        fail(errorOutput.trim() || 'PhoneUse did not provide a valid console address.');
+        fail(errorOutput.trim() || 'Phone Use did not provide a valid console address.');
       }
     });
     child.once('exit', (code) => {
       if (!settled && code !== 0) {
-        fail(errorOutput.trim() || 'The PhoneUse bridge exited before it was ready.');
+        fail(errorOutput.trim() || 'The Phone Use bridge exited before it was ready.');
       }
     });
   });
@@ -206,13 +206,13 @@ export async function onboard(args = process.argv.slice(2)) {
 
   if (options.help) {
     console.log(
-      `PhoneUse onboarding\n\n  npm run onboard -- --codex                 Prepare APK, skill, MCP, and console\n  npm run onboard -- --skill                 Prepare APK and console for another MCP host\n  npm run onboard -- --codex --apk PATH      Use a trusted local APK instead of building\n  npm run onboard -- --accept-android-licenses  Accept SDK licenses after reviewing their terms\n\nOptional --skill-dir DIR chooses the parent skill directory.\nRequires Node 22+, npm, OpenSSL, unzip, tar, and bash. Missing Android build tools are installed locally.\nNo phone app is installed and no phone control is enabled automatically.`,
+      `Phone Use onboarding\n\n  npm run onboard -- --codex                 Prepare APK, skill, MCP, and console\n  npm run onboard -- --skill                 Prepare APK and console for another MCP host\n  npm run onboard -- --codex --apk PATH      Use a trusted local APK instead of building\n  npm run onboard -- --accept-android-licenses  Accept SDK licenses after reviewing their terms\n\nOptional --skill-dir DIR chooses the parent skill directory.\nRequires Node 22+, npm, OpenSSL, unzip, tar, and bash. Missing Android build tools are installed locally.\nNo phone app is installed and no phone control is enabled automatically.`,
     );
     return;
   }
 
   if (Number(process.versions.node.split('.')[0]) < 22) {
-    throw new Error('Install Node 22 or later, then run PhoneUse onboarding again.');
+    throw new Error('Install Node 22 or later, then run Phone Use onboarding again.');
   }
 
   await rm(join(repositoryRoot, 'artifacts/onboarding.json'), { force: true });
@@ -221,7 +221,7 @@ export async function onboard(args = process.argv.slice(2)) {
 
   if (process.platform === 'win32') {
     throw new Error(
-      'Run PhoneUse onboarding in WSL on Windows. Native Windows onboarding is not supported.',
+      'Run Phone Use onboarding in WSL on Windows. Native Windows onboarding is not supported.',
     );
   }
 
@@ -234,7 +234,7 @@ export async function onboard(args = process.argv.slice(2)) {
     const check = spawnSync(command, args, { stdio: 'ignore', timeout: 10_000 });
 
     if (check.error || check.status !== 0) {
-      throw new Error(`Install ${command}, then run PhoneUse onboarding again.`);
+      throw new Error(`Install ${command}, then run Phone Use onboarding again.`);
     }
   }
 
@@ -314,7 +314,7 @@ export async function onboard(args = process.argv.slice(2)) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   onboard().catch((error) => {
-    console.error(error instanceof Error ? error.message : 'PhoneUse onboarding failed.');
+    console.error(error instanceof Error ? error.message : 'Phone Use onboarding failed.');
     process.exitCode = 1;
   });
 }

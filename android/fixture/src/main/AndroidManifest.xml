@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="false"
-        android:label="PhoneUse test screen"
+        android:label="Phone Use test screen"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".SecureActivity"

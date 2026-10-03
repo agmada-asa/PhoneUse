@@ -36,7 +36,7 @@ export function environmentPort(value: string | undefined, fallback: number): nu
   const parsed = value === undefined ? fallback : /^\d+$/.test(value) ? Number(value) : NaN;
 
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    throw new Error("PhoneUse ports must be integers between 1 and 65535.");
+    throw new Error("Phone Use ports must be integers between 1 and 65535.");
   }
 
   return parsed;

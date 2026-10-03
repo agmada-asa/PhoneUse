@@ -14,7 +14,7 @@ import { startManagedBridge } from "../src/managed-bridge.js";
 import { requestLocal } from "../src/local-client.js";
 import { repositoryRoot } from "../src/runtime.js";
 
-/** Reserves an available loopback port without using the operator's normal PhoneUse ports. */
+/** Reserves an available loopback port without using the operator's normal Phone Use ports. */
 async function availablePort(): Promise<number> {
   const listener = createServer();
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));

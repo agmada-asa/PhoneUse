@@ -55,7 +55,7 @@ async function serve(): Promise<void> {
 
 void serve().catch((error: unknown) => {
   process.stderr.write(
-    `PhoneUse onboarding bridge could not start: ${error instanceof Error ? error.message : "unknown error"}\n`,
+    `Phone Use onboarding bridge could not start: ${error instanceof Error ? error.message : "unknown error"}\n`,
   );
   process.exitCode = 1;
 });
