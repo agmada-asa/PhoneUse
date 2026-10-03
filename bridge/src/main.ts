@@ -66,7 +66,7 @@ async function main(): Promise<void> {
     const phonePort = port(flag(args, '--phone-port', process.env.PHONEUSE_PHONE_PORT ?? '8765'));
     const adminPort = port(flag(args, '--admin-port', process.env.PHONEUSE_ADMIN_PORT ?? '8766'));
     const advertisedHost = flag(args, '--advertise', process.env.PHONEUSE_ADVERTISE_HOST ?? lanAddress());
-    const server = await createBridge({ stateDir, host: flag(args, '--host', '0.0.0.0'), advertisedHost, phonePort, adminPort, publicDir: resolve(repositoryRoot, 'bridge/public') });
+    const server = await createBridge({ stateDir, host: flag(args, '--host', '0.0.0.0'), advertisedHost, phonePort, adminPort, publicDir: resolve(repositoryRoot, 'bridge/public'), mcpEntry: resolve(repositoryRoot, 'bridge/dist/src/mcp.js') });
     console.log(`PhoneUse console: http://127.0.0.1:${adminPort}`);
     console.log(`Phone connection: wss://${advertisedHost}:${phonePort}/phone`);
     console.log('Open the console to show your private pairing QR code. Press Ctrl+C to stop.');
