@@ -1,0 +1,23 @@
+{
+  "name": "phoneuse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local MCP control of an explicitly enabled Android phone over encrypted Wi-Fi",
+  "workspaces": ["bridge"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "npm run build --workspace @phoneuse/bridge",
+    "typecheck": "npm run typecheck --workspace @phoneuse/bridge",
+    "test": "npm run build && npm run test --workspace @phoneuse/bridge",
+    "start": "node bridge/dist/src/main.js start",
+    "doctor": "node bridge/dist/src/main.js doctor",
+    "pair": "node bridge/dist/src/main.js pair",
+    "status": "node bridge/dist/src/main.js status",
+    "command": "node bridge/dist/src/main.js command",
+    "disconnect": "node bridge/dist/src/main.js disconnect",
+    "mcp": "node bridge/dist/src/mcp.js",
+    "android:build": "bash scripts/build-android.sh",
+    "android:install": "bash scripts/install-android.sh",
+    "test:android": "node scripts/emulator-test.mjs"
+  }
+}

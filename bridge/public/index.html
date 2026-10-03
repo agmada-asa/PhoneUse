@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- Local operator console. No phone content or credentials leave this origin. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="phoneuse-csrf" content="{{CSRF_TOKEN}}">
+  <title>PhoneUse</title>
+  <link rel="stylesheet" href="/console.css">
+  <script src="/console.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><div><p class="eyebrow">Local phone control</p><h1>PhoneUse</h1></div><span id="connection" role="status">Checking connection</span></header>
+    <p class="intro">Pair your phone, choose which apps to protect, then enable control on the phone.</p>
+    <section aria-labelledby="pair-heading">
+      <h2 id="pair-heading">Connect your phone</h2>
+      <ol><li>Install and open the PhoneUse Android app.</li><li>Enable its accessibility service, then paste the pairing code below.</li><li>Choose your blocked apps and enable control. Leave PhoneUse to start using another app.</li></ol>
+      <p id="address" class="muted">Loading your computer's address…</p>
+      <button id="reveal" type="button">Show pairing code</button>
+      <div id="pairing" hidden><label for="pair-code">Private pairing code</label><textarea id="pair-code" rows="4" readonly spellcheck="false"></textarea><button id="copy" type="button">Copy pairing code</button><p class="muted">Share only with your own phone. Both devices must be on the same network.</p></div>
+    </section>
+    <section aria-labelledby="control-heading">
+      <div class="section-heading"><h2 id="control-heading">Try phone control</h2><button id="disconnect" type="button" class="danger" disabled>Disconnect phone</button></div>
+      <p id="device-state" class="muted">Waiting for a phone.</p>
+      <div id="actions" class="actions"><button type="button" data-method="snapshot" disabled>Read screen</button><button type="button" data-method="screenshot" disabled>Take screenshot</button><button type="button" data-action="back" disabled>Back</button><button type="button" data-action="home" disabled>Home</button><button type="button" data-action="recents" disabled>Recent apps</button></div>
+      <p class="muted">Blocked apps and PhoneUse settings cannot be read or controlled. Screenshots and screen text stay in memory unless you explicitly save them.</p>
+      <p id="message" role="status" aria-live="polite"></p>
+      <div id="screen-result" hidden><img id="screen" alt="Current phone screenshot"><p id="dimensions" class="muted"></p></div>
+      <div id="text-result" hidden><h3>Screen result</h3><pre id="result" tabindex="0"></pre></div>
+    </section>
+    <section aria-labelledby="codex-heading"><h2 id="codex-heading">Connect Codex</h2><p>Keep this bridge running and register the local MCP server using the command in the repository's README. Then start a new Codex session.</p><p class="muted">The phone connection uses your LAN. Using Codex still involves its configured model provider.</p></section>
+    <footer>PhoneUse 0.1 · Personal testing build</footer>
+  </main>
+</body>
+</html>
