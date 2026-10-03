@@ -1,0 +1,14 @@
+node_modules/
+bridge/dist/
+.phoneuse/
+artifacts/
+*.log
+.DS_Store
+.env*
+android/.gradle/
+android/.kotlin/
+android/local.properties
+android/**/build/
+android/.idea/
+*.jks
+*.keystore
