@@ -63,7 +63,8 @@ strong{font-weight:600}
 .step-dot{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;font-size:13px;font-weight:700;background:var(--sunk);color:var(--soft)}
 .step[data-state="current"] .step-dot{background:var(--ink);color:var(--paper)}
 .step[data-state="done"] .step-dot{background:var(--ok-soft);color:var(--ok);font-size:0}
-.step[data-state="done"] .step-dot::before{content:"";width:10px;height:5px;margin-top:-3px;border:solid currentColor;border-width:0 0 2px 2px;transform:rotate(-45deg)}
+/* Check path spans x 3.5–12.5 and y 4.5–11.5, so it sits optically centred in its 16px box. */
+.step[data-state="done"] .step-dot::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat}
 .step-title{display:grid;gap:1px;min-width:0}
 .step-name{font-size:16px;font-weight:600;letter-spacing:-.015em}
 .step-status{font-size:13px;color:var(--muted)}

@@ -111,11 +111,13 @@ function updateButtons() {
 /** Refreshes state without overwriting explicit action results or errors. */
 async function refresh() {
   try {
+    const wasConnected = latestStatus.connected;
     latestStatus = await api('/api/status');
     bridgeIssue = null;
     if (!isReady()) clearScreen();
-    // Take the pairing secret off screen as soon as the phone has used it.
-    if (latestStatus.connected && !$('pairing').hidden) hidePairing();
+    // Take the pairing secret off screen when a phone connects, but let the operator show it
+    // again while connected, for example to pair a second phone or re-pair this one.
+    if (latestStatus.connected && !wasConnected && !$('pairing').hidden) hidePairing();
   } catch (error) {
     bridgeIssue = error.status === 401 || error.status === 403 ? 'stale' : 'down';
     latestStatus = { connected: false }; clearScreen();
