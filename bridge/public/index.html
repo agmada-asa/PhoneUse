@@ -1,42 +1,145 @@
 <!doctype html>
-<!-- Local operator console. No phone content or credentials leave this origin. -->
+<!-- Local operator console: guided setup beside a live phone panel. No phone content or credentials leave this origin. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="phoneuse-csrf" content="{{CSRF_TOKEN}}">
+  <meta name="color-scheme" content="light dark">
   <title>PhoneUse</title>
+  <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/console.css">
   <script src="/console.js" defer></script>
 </head>
 <body>
-  <main>
-    <header><div><p class="eyebrow">Local phone control</p><h1>PhoneUse</h1></div><span id="connection" role="status">Checking connection</span></header>
-    <p class="intro">Pair your phone, choose which apps to protect, then enable control on the phone.</p>
-    <section aria-labelledby="pair-heading">
-      <h2 id="pair-heading">Connect your phone</h2>
-      <ol><li>Install and open the PhoneUse Android app.</li><li>Show the QR code below, then select Scan pairing QR code on your phone.</li><li>Enable accessibility, choose your blocked apps, then connect and enable control on the phone.</li></ol>
-      <details><summary>Accessibility blocked by a restricted setting?</summary><p>On the phone, open Settings → Apps → PhoneUse → the three-dot menu → Allow restricted settings. Then return to Accessibility → Installed apps → PhoneUse and enable the service. PhoneUse also has a setup help button and an App info shortcut.</p></details>
-      <p id="address" class="muted">Loading your computer's address…</p>
-      <button id="reveal" type="button" aria-expanded="false" aria-controls="pairing">Show pairing QR code</button>
-      <div id="pairing" hidden>
-        <p>In PhoneUse on your phone, select <strong>Scan pairing QR code</strong> and point the camera here.</p>
-        <img id="pair-qr" alt="Private PhoneUse pairing QR code">
-        <p class="muted">Both devices must be on the same network. This QR code grants a connection to your computer. Keep it private.</p>
-        <details><summary>Pair by pasting a code instead</summary><label for="pair-code">Private pairing code</label><textarea id="pair-code" rows="4" readonly spellcheck="false" autocomplete="off"></textarea><button id="copy" type="button">Copy pairing code</button></details>
+  <header class="topbar">
+    <span class="brand">
+      <!-- Brand mark: decorative, the visible wordmark names the app. -->
+      <svg aria-hidden="true" class="mark" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="22" height="30" rx="6" fill="url(#phoneuse-mark-gradient)"/>
+        <rect x="9" y="25.5" width="6" height="2" rx="1" fill="#0e0d0b" fill-opacity=".35"/>
+        <defs><linearGradient id="phoneuse-mark-gradient" x1="0" y1="0" x2="24" y2="32" gradientUnits="userSpaceOnUse"><stop stop-color="#D3FBFF"/><stop offset="1" stop-color="#0088FF"/></linearGradient></defs>
+      </svg>
+      PhoneUse
+    </span>
+    <span id="connection" class="pill" data-tone="neutral" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-label">Checking connection</span></span>
+  </header>
+
+  <main class="layout">
+    <section class="setup" aria-labelledby="setup-heading">
+      <h1 id="setup-heading">Set up your phone</h1>
+      <p id="progress" class="muted">Follow the steps in order. Control stays off until you allow it on the phone.</p>
+
+      <ol class="steps">
+        <li class="step" id="step-pair" data-state="current">
+          <button type="button" class="step-head" aria-expanded="true" aria-controls="step-pair-body">
+            <span class="step-dot" aria-hidden="true">1</span>
+            <span class="step-title"><span class="step-name">Pair and connect</span><span class="step-status" id="step-pair-status">Waiting for your phone</span></span>
+          </button>
+          <div class="step-body" id="step-pair-body">
+            <p>Install and open PhoneUse on your phone, then tap <strong>Scan pairing QR code</strong> and point it at this screen. The phone connects after you confirm the computer address.</p>
+            <button id="reveal" type="button" class="button primary" aria-expanded="false" aria-controls="pairing">Show pairing QR code</button>
+            <p id="pair-error" class="message error" role="alert"></p>
+            <div id="pairing" class="pairing" hidden>
+              <img id="pair-qr" alt="Private PhoneUse pairing QR code">
+              <div class="pairing-notes">
+                <p><strong>Keep this private.</strong> Anyone who scans it on your network can connect to this computer. Hide it when you are done.</p>
+                <details>
+                  <summary>Pair by pasting a code instead</summary>
+                  <label for="pair-code">Private pairing code</label>
+                  <textarea id="pair-code" rows="4" readonly spellcheck="false" autocomplete="off"></textarea>
+                  <button id="copy" type="button" class="button outline small">Copy pairing code</button>
+                </details>
+              </div>
+            </div>
+            <p class="muted" id="address">Both devices must be on the same Wi-Fi network.</p>
+          </div>
+        </li>
+
+        <li class="step" id="step-access" data-state="todo">
+          <button type="button" class="step-head" aria-expanded="false" aria-controls="step-access-body">
+            <span class="step-dot" aria-hidden="true">2</span>
+            <span class="step-title"><span class="step-name">Turn on accessibility</span><span class="step-status" id="step-access-status">After pairing</span></span>
+          </button>
+          <div class="step-body" id="step-access-body" hidden>
+            <p>In PhoneUse, tap <strong>Turn on</strong> next to Accessibility, then enable the PhoneUse service. PhoneUse uses it to read the screen and tap only while you allow control.</p>
+            <details>
+              <summary>Android says the setting is restricted</summary>
+              <p>Open <strong>Settings → Apps → PhoneUse</strong>, tap the three-dot menu, and choose <strong>Allow restricted settings</strong>. Then return to Accessibility and enable PhoneUse. The app's <strong>Setup help</strong> link opens the same page.</p>
+            </details>
+          </div>
+        </li>
+
+        <li class="step" id="step-control" data-state="todo">
+          <button type="button" class="step-head" aria-expanded="false" aria-controls="step-control-body">
+            <span class="step-dot" aria-hidden="true">3</span>
+            <span class="step-title"><span class="step-name">Allow control on the phone</span><span class="step-status" id="step-control-status">After accessibility</span></span>
+          </button>
+          <div class="step-body" id="step-control-body" hidden>
+            <p>In PhoneUse, turn on <strong>Allow this computer to control the phone</strong>. It switches off whenever the phone disconnects.</p>
+            <p class="muted">Choose apps to protect on the phone first. PhoneUse and protected apps can never be read or controlled.</p>
+          </div>
+        </li>
+
+        <li class="step" id="step-agent" data-state="todo">
+          <button type="button" class="step-head" aria-expanded="false" aria-controls="step-agent-body">
+            <span class="step-dot" aria-hidden="true">4</span>
+            <span class="step-title"><span class="step-name">Connect your coding agent</span><span class="step-status">One-time setup on this computer</span></span>
+          </button>
+          <div class="step-body" id="step-agent-body" hidden>
+            <p>Register the PhoneUse tools with Codex, then start a new session. Keep this bridge running while the agent works.</p>
+            <div class="command">
+              <code id="mcp-command">codex mcp add phoneuse -- node {{MCP_ENTRY}}</code>
+              <button id="copy-mcp" type="button" class="button outline small">Copy</button>
+            </div>
+            <p class="muted">Other MCP hosts: run <code>node</code> with the same file path. Your agent may send what it reads from the phone to its model provider.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="phone" aria-labelledby="phone-heading">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 id="phone-heading">Phone</h2>
+            <p id="device-state" class="muted">Waiting for a phone.</p>
+          </div>
+          <button id="disconnect" type="button" class="button destructive small" hidden>Disconnect</button>
+        </div>
+
+        <div class="viewer" id="viewer" data-empty="true">
+          <img id="screen" alt="Current phone screenshot" hidden>
+          <p id="viewer-empty" class="viewer-empty">Screenshots appear here. Nothing is saved.</p>
+        </div>
+        <p id="dimensions" class="muted small-text" hidden></p>
+
+        <div class="toolbar" id="actions">
+          <div class="toolbar-main">
+            <button type="button" class="button primary" data-method="snapshot" disabled>Read screen</button>
+            <button type="button" class="button outline" data-method="screenshot" disabled>Take screenshot</button>
+          </div>
+          <div class="segmented" role="group" aria-label="Phone navigation">
+            <button type="button" data-action="back" disabled>Back</button>
+            <button type="button" data-action="home" disabled>Home</button>
+            <button type="button" data-action="recents" disabled>Recent apps</button>
+          </div>
+        </div>
+
+        <p id="message" class="message" role="status" aria-live="polite"></p>
+
+        <div id="text-result" class="result" hidden>
+          <h3 id="result-heading">Screen text</h3>
+          <p id="result-summary" class="muted"></p>
+          <ul id="result-nodes" class="nodes" aria-labelledby="result-heading"></ul>
+          <details>
+            <summary>Raw result</summary>
+            <pre id="result" tabindex="0"></pre>
+          </details>
+        </div>
       </div>
+      <p class="muted small-text footnote">Blocked apps and PhoneUse itself cannot be read or controlled. Screenshots and screen text stay in this tab only and clear when the phone disconnects.</p>
     </section>
-    <section aria-labelledby="control-heading">
-      <div class="section-heading"><h2 id="control-heading">Try phone control</h2><button id="disconnect" type="button" class="danger" disabled>Disconnect phone</button></div>
-      <p id="device-state" class="muted">Waiting for a phone.</p>
-      <div id="actions" class="actions"><button type="button" data-method="snapshot" disabled>Read screen</button><button type="button" data-method="screenshot" disabled>Take screenshot</button><button type="button" data-action="back" disabled>Back</button><button type="button" data-action="home" disabled>Home</button><button type="button" data-action="recents" disabled>Recent apps</button></div>
-      <p class="muted">Blocked apps and PhoneUse settings cannot be read or controlled. Screenshots and screen text stay in memory unless you explicitly save them.</p>
-      <p id="message" role="status" aria-live="polite"></p>
-      <div id="screen-result" hidden><img id="screen" alt="Current phone screenshot"><p id="dimensions" class="muted"></p></div>
-      <div id="text-result" hidden><h3>Screen result</h3><pre id="result" tabindex="0"></pre></div>
-    </section>
-    <section aria-labelledby="codex-heading"><h2 id="codex-heading">Connect Codex</h2><p>Keep this bridge running and register the local MCP server using the command in the repository's README. Then start a new Codex session.</p><p class="muted">The phone connection uses your LAN. Using Codex still involves its configured model provider.</p></section>
-    <footer>PhoneUse 0.1 · Personal testing build</footer>
   </main>
 </body>
 </html>
