@@ -341,14 +341,14 @@ public final class PhoneAccessibilityService extends AccessibilityService {
       throw new CommandFailure("CONTROL_DISABLED", "Enable control on your phone.");
     if (!PhoneState.accessibilityEnabled(this) || PhoneState.accessibility != this)
       throw new CommandFailure(
-          "ACCESSIBILITY_DISABLED", "Enable PhoneUse accessibility access on your phone.");
+          "ACCESSIBILITY_DISABLED", "Enable Phone Use accessibility access on your phone.");
     android.app.KeyguardManager keyguard =
         (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
     if (keyguard != null && keyguard.isKeyguardLocked())
       throw new CommandFailure("SCREEN_LOCKED", "Unlock your phone before controlling it.");
   }
 
-  /** Returns the phone-local package blocklist, always including PhoneUse itself. */
+  /** Returns the phone-local package blocklist, always including Phone Use itself. */
   private Set<String> getBlockedPackages() {
     HashSet<String> result = new HashSet<>();
     result.add(PhoneState.OWN_PACKAGE);

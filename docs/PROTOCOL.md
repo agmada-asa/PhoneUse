@@ -1,4 +1,4 @@
-# PhoneUse protocol, version 2
+# Phone Use protocol, version 2
 
 The Android app opens an outbound **WSS** connection to `wss://<computer LAN address>:8765/phone`. TLS uses a locally generated self-signed certificate; Android validates the exact SHA-256 DER certificate fingerprint from the pairing code and its validity. Pin identity replaces public CA trust; never accept any other certificate. The request carries `Authorization: Bearer <phone token>`. Tokens must not appear in URLs or logs. The operator HTTP API binds only to `127.0.0.1:8766`.
 
