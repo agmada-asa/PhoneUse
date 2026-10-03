@@ -59,8 +59,27 @@ document.querySelectorAll('[data-method]').forEach(button => button.addEventList
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => { void run('global_action', { action: button.dataset.action }); }));
 document.getElementById('disconnect').addEventListener('click', async () => { try { await api('/api/disconnect', {}); clearScreen(); feedback('Phone disconnected. Reconnect from the phone when ready.'); await refresh(); } catch (error) { feedback(error.message, true); } });
 document.getElementById('reveal').addEventListener('click', async () => {
-  try { const pairing = await api('/api/pairing'); document.getElementById('pair-code').value = pairing.code; document.getElementById('pairing').hidden = false; document.getElementById('address').textContent = pairing.url; document.getElementById('reveal').hidden = true; }
+  const reveal = document.getElementById('reveal');
+  if (!document.getElementById('pairing').hidden) {
+    document.getElementById('pairing').hidden = true;
+    document.getElementById('pair-qr').removeAttribute('src');
+    document.getElementById('pair-code').value = '';
+    reveal.textContent = 'Show pairing QR code';
+    reveal.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  reveal.disabled = true;
+  try {
+    const pairing = await api('/api/pairing');
+    document.getElementById('pair-code').value = pairing.code;
+    document.getElementById('pair-qr').src = pairing.qrDataUrl;
+    document.getElementById('pairing').hidden = false;
+    document.getElementById('address').textContent = pairing.url;
+    reveal.textContent = 'Hide pairing QR code';
+    reveal.setAttribute('aria-expanded', 'true');
+  }
   catch (error) { feedback(error.message, true); }
+  finally { reveal.disabled = false; }
 });
 document.getElementById('copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(document.getElementById('pair-code').value); feedback('Pairing code copied. Paste it into PhoneUse on your phone.'); } catch { document.getElementById('pair-code').select(); feedback('Select and copy the pairing code manually.'); } });
 void refresh();

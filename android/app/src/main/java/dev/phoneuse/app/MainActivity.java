@@ -11,18 +11,24 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.InputType;
+import android.view.View;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.core.content.ContextCompat;
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -66,8 +72,18 @@ public final class MainActivity extends Activity {
     getWindow().setStatusBarColor(Color.WHITE);
     getWindow().setNavigationBarColor(Color.WHITE);
     getWindow().setDecorFitsSystemWindows(false);
+    getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     buildUi();
     refreshStatus();
+    if (handlePairingIntent(getIntent())) clearIncomingPairingIntent();
+  }
+
+  /** Handles scanner links delivered to an already visible singleTop activity. */
+  @Override
+  protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    setIntent(intent);
+    if (handlePairingIntent(intent)) clearIncomingPairingIntent();
   }
 
   /**
@@ -101,11 +117,28 @@ public final class MainActivity extends Activity {
     root.setPadding(dp(22), dp(20), dp(22), dp(28));
     root.setBackgroundColor(Color.WHITE);
     scroll.addView(root);
-    root.setOnApplyWindowInsetsListener(
+    scroll.setClipToPadding(false);
+    scroll.addOnLayoutChangeListener(
+        (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+          if (bottom - top == oldBottom - oldTop) return;
+          View focused = v.findFocus();
+          if (focused != null && focused != v) {
+            focused.requestRectangleOnScreen(
+                new android.graphics.Rect(0, 0, focused.getWidth(), focused.getHeight()), true);
+          }
+        });
+    scroll.setOnApplyWindowInsetsListener(
         (v, insets) -> {
           android.graphics.Insets bars =
               insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-          v.setPadding(dp(22), bars.top + dp(16), dp(22), bars.bottom + dp(22));
+          android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
+          root.setPadding(dp(22), bars.top + dp(16), dp(22), bars.bottom + dp(22));
+          int keyboardMargin = insets.isVisible(WindowInsets.Type.ime()) ? ime.bottom : 0;
+          FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) v.getLayoutParams();
+          if (params.bottomMargin != keyboardMargin) {
+            params.bottomMargin = keyboardMargin;
+            v.setLayoutParams(params);
+          }
           return insets;
         });
     TextView title = text("Control your Android phone", 26, true);
@@ -128,13 +161,19 @@ public final class MainActivity extends Activity {
     access.setOnClickListener(
         v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
     root.addView(access, margin(0, 0, 0, 20));
+    Button accessHelp = button("Accessibility setup help");
+    accessHelp.setOnClickListener(v -> showAccessibilityHelp());
+    root.addView(accessHelp, margin(0, 0, 0, 20));
     root.addView(text("Pairing code", 19, true));
     root.addView(
         text(
-            "Paste the code shown by PhoneUse on your computer, then save it on this phone.",
+            "Scan the QR code shown by PhoneUse on your computer, or paste its code below.",
             15,
             false),
         margin(0, 5, 0, 8));
+    Button scan = button("Scan pairing QR code");
+    scan.setOnClickListener(v -> startQrScan());
+    root.addView(scan, margin(0, 0, 0, 8));
     pairingInput = new EditText(this);
     pairingInput.setHint("phoneuse:…");
     pairingInput.setMinLines(2);
@@ -202,25 +241,121 @@ public final class MainActivity extends Activity {
     setContentView(scroll);
   }
 
+  /** Opens the QR-only camera scanner without retaining camera frames or decoded text in logs. */
+  private void startQrScan() {
+    IntentIntegrator scanner = new IntentIntegrator(this);
+    scanner.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
+    scanner.setPrompt("Scan the pairing QR code shown by PhoneUse on your computer");
+    scanner.setBeepEnabled(false);
+    scanner.setOrientationLocked(false);
+    scanner.initiateScan();
+  }
+
+  /** Validates scan output and asks the phone user to confirm the computer address before saving. */
+  @Override
+  protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+    if (result == null) return;
+    String code = result.getContents();
+    if (code == null) {
+      showMessage(
+          "Scan canceled or camera access was denied. Allow Camera in PhoneUse app permissions"
+              + " and try again, or paste a pairing code.");
+      return;
+    }
+    confirmPairingCode(code, "This QR code");
+  }
+
+  /** Routes validated PhoneUse links from external scanners through the same confirmation flow. */
+  private boolean handlePairingIntent(Intent intent) {
+    if (intent == null
+        || !Intent.ACTION_VIEW.equals(intent.getAction())
+        || intent.getData() == null
+        || !"phoneuse".equalsIgnoreCase(intent.getData().getScheme())) return false;
+    Uri data = intent.getData();
+    String code = data.toString();
+    if (!data.isOpaque()
+        || data.getEncodedAuthority() != null
+        || data.getEncodedFragment() != null
+        || code.length() > 4096) {
+      showMessage("Enter or scan a valid PhoneUse pairing code.");
+      return true;
+    }
+    confirmPairingCode(code, "This link");
+    return true;
+  }
+
+  /** Removes incoming credentials from the Activity's retained launch Intent after handling. */
+  private void clearIncomingPairingIntent() {
+    setIntent(new Intent(this, MainActivity.class));
+  }
+
+  /** Validates pairing data and confirms the computer address before storing credentials. */
+  private void confirmPairingCode(String code, String source) {
+    try {
+      PairingConfig config = PairingConfig.parse(code);
+      String address = config.displayAddress();
+      new AlertDialog.Builder(this)
+          .setTitle("Save this pairing?")
+          .setMessage(source + " will pair with " + address + ".")
+          .setNegativeButton("Cancel", (dialog, which) -> showMessage("Pairing was not saved."))
+          .setPositiveButton("Save pairing", (dialog, which) -> savePairing(config))
+          .show();
+    } catch (Exception e) {
+      showMessage(e.getMessage() == null ? "Pairing code is invalid." : e.getMessage());
+    }
+  }
+
+  /** Explains Android's sideload restriction and offers the app-info page for the manual override. */
+  private void showAccessibilityHelp() {
+    new AlertDialog.Builder(this)
+        .setTitle("Allow accessibility access")
+        .setMessage(
+            "Android can block accessibility access for apps installed outside an app store."
+                + " Open PhoneUse app info, tap the three-dot menu, and choose Allow restricted"
+                + " settings. Then return here and enable PhoneUse in Accessibility settings.")
+        .setNegativeButton("Close", null)
+        .setNeutralButton("Open app info", (dialog, which) -> openAppInfo())
+        .setPositiveButton(
+            "Open Accessibility settings",
+            (dialog, which) -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
+        .show();
+  }
+
+  /** Opens this package's Android app-info page so the phone user can allow restricted settings. */
+  private void openAppInfo() {
+    Intent intent =
+        new Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", getPackageName(), null));
+    startActivity(intent);
+  }
+
   /** Saves only valid v1 pairing codes into this app's private preferences. */
   private void savePairing() {
     try {
       PairingConfig config = PairingConfig.parse(pairingInput.getText().toString().trim());
-      PhoneState.prefs(this)
-          .edit()
-          .putString("pair_url", config.url)
-          .putString("pair_token", config.token)
-          .putString("pair_pin", config.fingerprint)
-          .apply();
-      pairingInput.setText("");
-      pairingInput.clearFocus();
-      root.requestFocus();
-      getSystemService(android.view.inputmethod.InputMethodManager.class)
-          .hideSoftInputFromWindow(pairingInput.getWindowToken(), 0);
-      showMessage("Pairing code saved on this phone.");
+      savePairing(config);
     } catch (Exception e) {
       showMessage(e.getMessage() == null ? "Pairing code is invalid." : e.getMessage());
     }
+  }
+
+  /** Stores validated credentials in private preferences without retaining the source code. */
+  private void savePairing(PairingConfig config) {
+    PhoneState.prefs(this)
+        .edit()
+        .putString("pair_url", config.url)
+        .putString("pair_token", config.token)
+        .putString("pair_pin", config.fingerprint)
+        .apply();
+    pairingInput.setText("");
+    pairingInput.clearFocus();
+    root.requestFocus();
+    getSystemService(android.view.inputmethod.InputMethodManager.class)
+        .hideSoftInputFromWindow(pairingInput.getWindowToken(), 0);
+    showMessage("Pairing code saved on this phone.");
   }
 
   /** Starts the visible-user foreground connection service only after a pairing code is saved. */

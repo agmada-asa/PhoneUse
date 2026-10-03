@@ -14,7 +14,11 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The wra
 
 ## Phone setup
 
-Install the APK, open PhoneUse, paste and save the pairing code from the computer, then enable PhoneUse under Android Accessibility settings. Return to PhoneUse and tap Connect. Enable the control checkbox only when the phone is ready for a remote session. Use Disconnect in the app or its ongoing notification to stop the connection.
+Install the APK, open PhoneUse, then scan the pairing QR code shown by the computer, open it with an external QR scanner that supports app links, or paste its pairing code. Scanned and opened credentials are checked and the computer address is shown for confirmation before saving. If an external scanner cannot open app links, use PhoneUse's in-app scanner. Then enable PhoneUse under Android Accessibility settings and tap Connect. Enable the control checkbox only when the phone is ready for a remote session. Use Disconnect in the app or its ongoing notification to stop the connection.
+
+If Android says PhoneUse is "Controlled by restricted setting," open **Accessibility setup help** in PhoneUse and choose **Open app info**. On the app-info screen, tap the three-dot menu and choose **Allow restricted settings**, then return to Accessibility settings and enable PhoneUse. Android requires this manual step for some sideloaded apps; PhoneUse cannot bypass it.
+
+Scanning requests camera access from Android. If camera access is denied or the scan is canceled, allow camera access in app permissions and scan again, or paste the pairing code instead.
 
 Choose blocked apps on the phone before enabling control. Remote requests are denied whenever a visible accessibility window belongs to a blocked app or PhoneUse itself. Screen capture and gestures require the Android accessibility service capabilities declared in `src/main/res/xml/accessibility_service.xml`.
 

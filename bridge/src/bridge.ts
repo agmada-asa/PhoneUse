@@ -7,6 +7,7 @@ import { networkInterfaces } from "node:os";
 import { timingSafeEqual } from "node:crypto";
 import { createServer as createTlsServer } from "node:https";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import QRCode from "qrcode";
 import { ensureState, type BridgeState } from "./state.js";
 import { HelloSchema, MAX_MESSAGE_BYTES, makeCommandMessage, parseCommand, PhoneResultSchema, validateCommandResult, type CommandMethod, type PhoneHello } from "./protocol.js";
 
@@ -257,7 +258,13 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
         const url = `wss://${formatHost(advertisedHost)}:${port}/phone`;
         const payload = { v: 1, url, token: state.phoneToken, fingerprint: state.fingerprint };
         const code = `phoneuse:${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`;
-        return sendJson(response, 200, { code, url, fingerprint: state.fingerprint });
+        try {
+          // Encode the exact validated paste format locally; never send pairing secrets to a QR service.
+          const qrDataUrl = await QRCode.toDataURL(code, { errorCorrectionLevel: "M", margin: 4, scale: 6 });
+          return sendJson(response, 200, { code, url, fingerprint: state.fingerprint, qrDataUrl });
+        } catch {
+          return sendJson(response, 500, { error: { code: "PAIRING_QR_FAILED", message: "Could not create the pairing QR code. Use the pairing code from npm run pair, or restart the bridge and try again." } });
+        }
       }
       return sendJson(response, browser || csrf ? 403 : 401, { error: { code: browser || csrf ? "CSRF_REJECTED" : "UNAUTHORIZED", message: browser || csrf ? "Reload the local console and try again." : "Local admin authentication is required." } });
     }

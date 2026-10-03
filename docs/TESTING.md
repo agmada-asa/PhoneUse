@@ -4,6 +4,8 @@ Run `npm test` for bridge integration checks and `npm run android:build` for an 
 
 The initial build was verified on 3 October 2026: bridge typecheck/build and all six integration tests passed; Android debug build and lint passed; all 16 automated behavior checks passed on the isolated API 36 emulator, including a populated password field, blocked commands, interrupted swipes, and deliberate disconnect. Physical-phone and vendor-specific checks below remain for the operator.
 
+QR pairing was checked on 3 October 2026: the six bridge tests pass, including decoding the generated QR PNG and checking its credentials and access restrictions. Android debug build and lint pass. External pairing links were verified on the isolated API 36 emulator with the app closed and already open, including address confirmation, canceled saves, refused malformed links, and control remaining off after connection. All 16 phone behavior checks were exercised across emulator runs. The final blocklist and disconnect checks passed separately after correcting setup taps on controls clipped under the status bar. The camera scanner opens and requests permission, but the emulator's synthetic camera crops the test image, so complete camera decoding and vendor restricted-settings approval still need a physical-phone check.
+
 ## Harmless emulator fixture
 
 The test-only `android/fixture` module contains a text field, a password field with the harmless value `fixture-only-secret`, an increment button, scroll list, and a secure screen. It has no network access and is a separate APK.
@@ -19,6 +21,17 @@ Pair the companion, enable accessibility and control, and open **PhoneUse test s
 For the automated harness, start a dedicated `PhoneUse_Test` AVD on port 5560 with the API 36 system image, build both APKs, then run `npm run test:android` from the repo root. The harness verifies the AVD name and refuses every other device. It resets only the companion and fixture on that disposable emulator, enables their test setup, and creates isolated bridge credentials under ignored `artifacts/emulator-state`. It does not operate the connected physical phone. The fixture screenshot is saved locally as `artifacts/emulator-fixture.png` for visual verification.
 
 Android's `uiautomator dump` temporarily interrupts accessibility services during local setup. The harness lets services restore and explicitly re-enables control after configuring the blocklist. Remote behavior checks use PhoneUse's own tools.
+
+## Pairing and accessibility setup
+
+- Open the console at wide and narrow widths. The QR code starts hidden, fits the viewport, and can be shown and hidden using the keyboard. Hiding removes the image and pairing text from the page.
+- Scan the displayed QR in PhoneUse. Confirm that the computer address matches the console and save. Connect separately and verify control stays off until enabled on the phone.
+- Open the same `phoneuse:` QR link from a compatible camera/gallery scanner with PhoneUse closed, then with it already open. Both paths must show address confirmation without starting control. Cancel leaves existing credentials unchanged. Reject malformed, hierarchical and oversized incoming links.
+- Cancel scanning or deny camera permission. No saved pairing should change, and manual paste must remain usable. Retry scanning after granting camera access in App info.
+- Scan unrelated QR content, an unsupported version, a malformed URL, an invalid token or fingerprint, or a code longer than 4096 characters. Refuse it without changing saved credentials. Do not log scanned content.
+- Verify the camera works offline without Google Play services and closes when the scanner leaves the foreground. Check focus, orientation, and scanning a real computer display on a physical phone.
+- On a sideloaded physical installation, follow **Accessibility setup help** to App info. If Android restricts the service, approve **Allow restricted settings** locally, then enable PhoneUse in accessibility settings. The app must never grant this setting itself.
+- The bridge integration test decodes the generated PNG with an independent QR reader, compares it with the complete pairing credentials, and verifies authentication, origin rejection and no-store caching.
 
 ## Behavior checklist
 

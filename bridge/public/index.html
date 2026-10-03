@@ -15,10 +15,16 @@
     <p class="intro">Pair your phone, choose which apps to protect, then enable control on the phone.</p>
     <section aria-labelledby="pair-heading">
       <h2 id="pair-heading">Connect your phone</h2>
-      <ol><li>Install and open the PhoneUse Android app.</li><li>Enable its accessibility service, then paste the pairing code below.</li><li>Choose your blocked apps and enable control. Leave PhoneUse to start using another app.</li></ol>
+      <ol><li>Install and open the PhoneUse Android app.</li><li>Show the QR code below, then select Scan pairing QR code on your phone.</li><li>Enable accessibility, choose your blocked apps, then connect and enable control on the phone.</li></ol>
+      <details><summary>Accessibility blocked by a restricted setting?</summary><p>On the phone, open Settings → Apps → PhoneUse → the three-dot menu → Allow restricted settings. Then return to Accessibility → Installed apps → PhoneUse and enable the service. PhoneUse also has a setup help button and an App info shortcut.</p></details>
       <p id="address" class="muted">Loading your computer's address…</p>
-      <button id="reveal" type="button">Show pairing code</button>
-      <div id="pairing" hidden><label for="pair-code">Private pairing code</label><textarea id="pair-code" rows="4" readonly spellcheck="false"></textarea><button id="copy" type="button">Copy pairing code</button><p class="muted">Share only with your own phone. Both devices must be on the same network.</p></div>
+      <button id="reveal" type="button" aria-expanded="false" aria-controls="pairing">Show pairing QR code</button>
+      <div id="pairing" hidden>
+        <p>In PhoneUse on your phone, select <strong>Scan pairing QR code</strong> and point the camera here.</p>
+        <img id="pair-qr" alt="Private PhoneUse pairing QR code">
+        <p class="muted">Both devices must be on the same network. This QR code grants a connection to your computer. Keep it private.</p>
+        <details><summary>Pair by pasting a code instead</summary><label for="pair-code">Private pairing code</label><textarea id="pair-code" rows="4" readonly spellcheck="false" autocomplete="off"></textarea><button id="copy" type="button">Copy pairing code</button></details>
+      </div>
     </section>
     <section aria-labelledby="control-heading">
       <div class="section-heading"><h2 id="control-heading">Try phone control</h2><button id="disconnect" type="button" class="danger" disabled>Disconnect phone</button></div>

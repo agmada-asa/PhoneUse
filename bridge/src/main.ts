@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     const server = await createBridge({ stateDir, host: flag(args, '--host', '0.0.0.0'), advertisedHost, phonePort, adminPort, publicDir: resolve(repositoryRoot, 'bridge/public') });
     console.log(`PhoneUse console: http://127.0.0.1:${adminPort}`);
     console.log(`Phone connection: wss://${advertisedHost}:${phonePort}/phone`);
-    console.log('Open the console to copy your private pairing code. Press Ctrl+C to stop.');
+    console.log('Open the console to show your private pairing QR code. Press Ctrl+C to stop.');
     if (advertisedHost === '127.0.0.1') console.log('No LAN address found. Restart with --advertise <computer Wi-Fi IP>.');
     let stopping = false;
     /** Closes both servers once and returns control to the terminal. */
