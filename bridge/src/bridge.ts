@@ -382,7 +382,7 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
           command.reject(
             new BridgeError(
               "PROTOCOL_ERROR",
-              "The phone returned a response that did not match the PhoneUse protocol.",
+              "The phone returned a response that did not match the Phone Use protocol.",
               502,
             ),
           );
@@ -444,7 +444,7 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
     const origin = request.headers.origin;
     if (!isLoopbackHost(host, effectiveAdminPort))
       return sendJson(response, 403, {
-        error: { code: "HOST_REJECTED", message: "Use the local PhoneUse address." },
+        error: { code: "HOST_REJECTED", message: "Use the local Phone Use address." },
       });
     if (origin !== undefined && !isMatchingOrigin(origin, host, effectiveAdminPort))
       return sendJson(response, 403, {
@@ -489,7 +489,7 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
         sendJson(response, 404, {
           error: {
             code: "APK_UNAVAILABLE",
-            message: "Ask your agent to run PhoneUse onboarding, then try again.",
+            message: "Ask your agent to run Phone Use onboarding, then try again.",
           },
         });
       }
@@ -632,7 +632,7 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
                   "{{MCP_ENTRY}}",
                   escapeHtml(options.mcpEntry ?? "bridge/dist/src/mcp.js"),
                 )
-            : "<!doctype html><html><body>PhoneUse local bridge is running.</body></html>";
+            : "<!doctype html><html><body>Phone Use local bridge is running.</body></html>";
         response.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "no-store",

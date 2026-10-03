@@ -40,7 +40,7 @@ import org.json.JSONObject;
 
 /** Maintains the user-started, pinned WSS session and serializes all protocol commands. */
 public final class ConnectionService extends Service {
-  /** Actions used only by PhoneUse's local UI and notification. */
+  /** Actions used only by Phone Use's local UI and notification. */
   static final String ACTION_CONNECT = "dev.phoneuse.app.CONNECT",
       ACTION_DISCONNECT = "dev.phoneuse.app.DISCONNECT",
       ACTION_STATUS = "dev.phoneuse.app.STATUS";
@@ -380,7 +380,7 @@ public final class ConnectionService extends Service {
     NotificationManager manager = getSystemService(NotificationManager.class);
     manager.createNotificationChannel(
         new NotificationChannel(
-            CHANNEL, "PhoneUse connection", NotificationManager.IMPORTANCE_LOW));
+            CHANNEL, "Phone Use connection", NotificationManager.IMPORTANCE_LOW));
     Intent disconnect = new Intent(this, ConnectionService.class).setAction(ACTION_DISCONNECT);
     PendingIntent action =
         PendingIntent.getService(
@@ -464,7 +464,7 @@ public final class ConnectionService extends Service {
             requestId(text),
             false,
             null,
-            error("BUSY", "PhoneUse is busy processing earlier commands."));
+            error("BUSY", "Phone Use is busy processing earlier commands."));
       }
     }
 
@@ -501,7 +501,7 @@ public final class ConnectionService extends Service {
           retireClient();
           if (code == 1008 && reason != null && reason.contains("Invalid protocol message")) {
             terminalFailure = true;
-            setStatus("Update PhoneUse on your computer to match this phone app.");
+            setStatus("Update Phone Use on your computer to match this phone app.");
           } else {
             setStatus("Disconnected");
           }
@@ -588,7 +588,7 @@ public final class ConnectionService extends Service {
     String id = "";
     try {
       if (ws != socket || stopping)
-        throw new ProtocolError("DISCONNECTED", "PhoneUse is disconnected.");
+        throw new ProtocolError("DISCONNECTED", "Phone Use is disconnected.");
       JSONObject req = new JSONObject(raw);
       if (!"command".equals(req.optString("type")))
         throw new ProtocolError("INVALID_COMMAND", "Expected a command frame.");
@@ -609,9 +609,9 @@ public final class ConnectionService extends Service {
       PhoneAccessibilityService service = PhoneState.accessibility;
       if (service == null)
         throw new ProtocolError(
-            "ACCESSIBILITY_DISABLED", "Enable PhoneUse accessibility access on your phone.");
+            "ACCESSIBILITY_DISABLED", "Enable Phone Use accessibility access on your phone.");
       if (ws != socket || stopping)
-        throw new ProtocolError("DISCONNECTED", "PhoneUse is disconnected.");
+        throw new ProtocolError("DISCONNECTED", "Phone Use is disconnected.");
       if (deadline <= SystemClock.elapsedRealtime())
         throw new ProtocolError("COMMAND_EXPIRED", "This command has expired.");
       JSONObject command =

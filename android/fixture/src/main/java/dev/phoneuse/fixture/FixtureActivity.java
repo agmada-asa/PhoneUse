@@ -19,7 +19,7 @@ import android.widget.TextView;
 import android.app.AlertDialog;
 
 /**
- * Hosts predictable accessible controls for exercising PhoneUse snapshots and actions on an
+ * Hosts predictable accessible controls for exercising Phone Use snapshots and actions on an
  * emulator.
  */
 public final class FixtureActivity extends Activity {
@@ -52,7 +52,7 @@ public final class FixtureActivity extends Activity {
           });
     }
 
-    content.addView(text("PhoneUse test screen", 24, true));
+    content.addView(text("Phone Use test screen", 24, true));
     Button dialog = button("Open scope dialog");
     dialog.setOnClickListener(
         view -> {
@@ -66,7 +66,7 @@ public final class FixtureActivity extends Activity {
           alert.getButton(AlertDialog.BUTTON_POSITIVE).setAllCaps(false);
         });
     content.addView(dialog, margin(0, 8, 0, 8));
-    Button blocked = button("Open PhoneUse settings");
+    Button blocked = button("Open Phone Use settings");
     blocked.setOnClickListener(
         view ->
             startActivity(

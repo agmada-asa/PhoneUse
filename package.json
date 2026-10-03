@@ -2,6 +2,7 @@
   "name": "phoneuse",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Local MCP control of an explicitly enabled Android phone over encrypted Wi-Fi",
   "workspaces": [
     "bridge"
@@ -14,20 +15,23 @@
     "format:check": "prettier --check .",
     "build": "npm run build --workspace @phoneuse/bridge",
     "typecheck": "npm run typecheck --workspace @phoneuse/bridge",
-    "test": "npm run build && npm run test --workspace @phoneuse/bridge",
+    "test": "npm run build && npm run test --workspace @phoneuse/bridge && node --test scripts/setup.test.mjs scripts/onboard.test.mjs scripts/prepare-android.test.mjs",
+    "setup": "node scripts/setup.mjs",
+    "onboard": "node scripts/onboard.mjs",
+    "stop": "node bridge/dist/src/main.js stop",
     "start": "node bridge/dist/src/main.js start",
     "doctor": "node bridge/dist/src/main.js doctor",
     "pair": "node bridge/dist/src/main.js pair",
     "status": "node bridge/dist/src/main.js status",
     "command": "node bridge/dist/src/main.js command",
     "disconnect": "node bridge/dist/src/main.js disconnect",
-    "mcp": "node bridge/dist/src/mcp.js",
+    "mcp": "node bridge/dist/src/mcp-launcher.js",
+    "mcp:manual": "node bridge/dist/src/mcp.js",
     "android:build": "bash scripts/build-android.sh",
     "android:install": "bash scripts/install-android.sh",
     "test:android": "node scripts/emulator-test.mjs",
     "test:android:connection": "node scripts/connection-test.mjs"
   },
-  "license": "MIT",
   "devDependencies": {
     "prettier": "3.9.9"
   }

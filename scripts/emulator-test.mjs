@@ -280,7 +280,7 @@ async function main() {
   await localTap('Allow this computer to control the phone');
   await waitStatus((value) => value.status?.controlEnabled);
   await denied('snapshot', {}, 'APP_BLOCKED');
-  passed('PhoneUse settings cannot be read remotely');
+  passed('Phone Use settings cannot be read remotely');
   await fixture();
   let screen = await settledSnapshot();
   assert.equal(screen.packageName, 'dev.phoneuse.fixture');
@@ -411,13 +411,13 @@ async function main() {
   let input = screen.nodes.find((node) => node.viewId?.endsWith('/input'));
   assert.ok(input?.editable);
   const target = await fixtureNodeAction((node) => node.viewId?.endsWith('/input'), 'set_text', {
-    text: 'PhoneUse verified',
+    text: 'Phone Use verified',
   });
   const beforeText = target.screen;
   input = target.node;
   await settle(600);
   screen = await command('snapshot');
-  assert.ok(screen.nodes.some((node) => node.text === 'PhoneUse verified'));
+  assert.ok(screen.nodes.some((node) => node.text === 'Phone Use verified'));
   passed('semantic text entry changes the actual field');
   await denied(
     'set_text',
@@ -538,7 +538,7 @@ async function main() {
   await settledSnapshot();
   passed('semantic scrolling follows the node advertised capability');
 
-  const blockedAction = await fixtureObserveClick('Open PhoneUse settings');
+  const blockedAction = await fixtureObserveClick('Open Phone Use settings');
   const blockedObservation = blockedAction.result;
   assert.equal(
     blockedObservation.performed,
@@ -673,7 +673,7 @@ async function main() {
   await localTap('Search apps');
   await adb('shell', 'input', 'text', 'dev.phoneuse.fixture');
   await settle();
-  await localTap('PhoneUse test screen');
+  await localTap('Phone Use test screen');
   await localTap('Save');
   // uiautomator dump temporarily suppresses accessibility services. Restore consent locally after setup.
   await localTap('Allow this computer to control the phone');

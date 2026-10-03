@@ -46,7 +46,7 @@ export async function requestLocal(
   const state: unknown = JSON.parse(await readFile(join(stateDir, "state.json"), "utf8"));
 
   if (!isState(state)) {
-    throw new Error("PhoneUse state file is invalid; restart the bridge to repair it.");
+    throw new Error("Phone Use state file is invalid; restart the bridge to repair it.");
   }
 
   const controller = new AbortController();

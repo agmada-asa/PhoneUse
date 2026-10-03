@@ -15,7 +15,7 @@ type ToolReply = {
   isError?: boolean;
 };
 
-/** Create the PhoneUse MCP server and register the documented observation and control tools. */
+/** Create the Phone Use MCP server and register the documented observation and control tools. */
 export function createPhoneMcpServer(request: LocalRequest = requestLocal): McpServer {
   const server = new McpServer(
     { name: "phoneuse", version: "0.2.0" },
@@ -176,7 +176,7 @@ export async function runMcpServer(): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   void runMcpServer().catch((error: unknown) => {
     process.stderr.write(
-      `PhoneUse MCP failed to start: ${error instanceof Error ? error.message : "unknown error"}\n`,
+      `Phone Use MCP failed to start: ${error instanceof Error ? error.message : "unknown error"}\n`,
     );
     process.exitCode = 1;
   });
