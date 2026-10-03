@@ -35,7 +35,7 @@ export async function runManagedMcpServer(): Promise<void> {
   /** Signal and EOF handlers report cleanup failures without exposing phone content. */
   const onStop = (): void => {
     void stop().catch(() => {
-      process.stderr.write("PhoneUse could not close its managed bridge cleanly.\n");
+      process.stderr.write("Phone Use could not close its managed bridge cleanly.\n");
       process.exitCode = 1;
     });
   };
@@ -62,7 +62,7 @@ export async function runManagedMcpServer(): Promise<void> {
     );
     controller.signal.throwIfAborted();
     process.stderr.write(
-      `PhoneUse ${bridge.owned ? "started" : "reused"} bridge. Console: ${bridge.consoleUrl}\n`,
+      `Phone Use ${bridge.owned ? "started" : "reused"} bridge. Console: ${bridge.consoleUrl}\n`,
     );
     server.server.onclose = onStop;
     await server.connect(new StdioServerTransport());
@@ -84,7 +84,7 @@ export async function runManagedMcpServer(): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   void runManagedMcpServer().catch((error: unknown) => {
     process.stderr.write(
-      `PhoneUse MCP could not start: ${error instanceof Error ? error.message : "unknown error"}\n`,
+      `Phone Use MCP could not start: ${error instanceof Error ? error.message : "unknown error"}\n`,
     );
     process.exitCode = 1;
   });

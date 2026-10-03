@@ -83,11 +83,11 @@ function renderSetup() {
       : !bridgeIssue
         ? 'Waiting for your phone'
         : 'The bridge is not available',
-    access: done.access ? 'On' : done.pair ? 'Turn it on in PhoneUse' : 'After pairing',
+    access: done.access ? 'On' : done.pair ? 'Turn it on in Phone Use' : 'After pairing',
     control: done.control
       ? 'Allowed'
       : done.access
-        ? 'Turn it on in PhoneUse'
+        ? 'Turn it on in Phone Use'
         : 'After accessibility',
   };
   const next = STEPS.find((step) => !done[step]);
@@ -134,10 +134,10 @@ function renderSetup() {
         : !latestStatus.connected
           ? 'Waiting for a phone.'
           : !status?.accessibilityEnabled
-            ? `${name} · turn on accessibility in PhoneUse.`
+            ? `${name} · turn on accessibility in Phone Use.`
             : !status?.controlEnabled
-              ? `${name} · allow control in PhoneUse to try actions.`
-              : `${name} · control allowed. Leave PhoneUse before testing.`;
+              ? `${name} · allow control in Phone Use to try actions.`
+              : `${name} · control allowed. Leave Phone Use before testing.`;
 
   renderAddress();
 }
@@ -170,7 +170,7 @@ function updateButtons() {
       ? 'Reconnect to the console to download the app.'
       : latestStatus.apkAvailable
         ? 'Transfer the APK to your Android phone and open it to install, then pair below.'
-        : 'Ask your agent to set up PhoneUse and prepare the Android app.');
+        : 'Ask your agent to set up Phone Use and prepare the Android app.');
 }
 
 /** Downloads the prepared APK with the console's CSRF credential, without putting secrets in a URL. */

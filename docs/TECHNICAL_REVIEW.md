@@ -1,6 +1,6 @@
 # Navigation and connectivity review
 
-This file records the 3 October 2026 review of PhoneUse's Android accessibility actions, bridge command lifecycle, and MCP tools, followed by implementation of the seven main findings. Navigation speed gains have not been measured. The original findings below describe the earlier code; their line references are historical.
+This file records the 3 October 2026 review of Phone Use's Android accessibility actions, bridge command lifecycle, and MCP tools, followed by implementation of the seven main findings. Navigation speed gains have not been measured. The original findings below describe the earlier code; their line references are historical.
 
 ## Implementation status
 

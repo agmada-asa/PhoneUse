@@ -1,4 +1,4 @@
-/** Prepares a private JDK and Android SDK for PhoneUse's local APK build. */
+/** Prepares a private JDK and Android SDK for Phone Use's local APK build. */
 
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -312,7 +312,7 @@ function hostPlatform(platform, arch) {
   if (platform === 'win32') {
     throw setupError(
       'ANDROID_HOST_UNSUPPORTED',
-      'PhoneUse onboarding currently supports macOS and Linux. Windows setup is not available yet.',
+      'Phone Use onboarding currently supports macOS and Linux. Windows setup is not available yet.',
     );
   }
 

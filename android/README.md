@@ -1,6 +1,6 @@
-# PhoneUse Android companion
+# Phone Use Android companion
 
-The Android app is the phone-side consent and accessibility boundary for PhoneUse. Pairing credentials and the app blocklist stay in private phone preferences. Control consent exists only in process memory and resets after a process restart, a new connection started from the app, a local disconnect, or an accessibility interruption. `dev.phoneuse.app` is always blocked from remote commands.
+The Android app is the phone-side consent and accessibility boundary for Phone Use. Pairing credentials and the app blocklist stay in private phone preferences. Control consent exists only in process memory and resets after a process restart, a new connection started from the app, a local disconnect, or an accessibility interruption. `dev.phoneuse.app` is always blocked from remote commands.
 
 ## Build
 
@@ -14,13 +14,13 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The wra
 
 ## Phone setup
 
-Install the APK, open PhoneUse, then scan the pairing QR code shown by the computer, open it with an external QR scanner that supports app links, or paste its pairing code. Scanned and opened credentials are checked and the computer address is shown for confirmation before saving. If an external scanner cannot open app links, use PhoneUse's in-app scanner. Saving connects with control disabled. Enable PhoneUse under Android Accessibility settings; use Connect if the connection is stopped. Enable the control switch only when the phone is ready for a remote session. Use Disconnect in the app or its ongoing notification to stop the connection.
+Install the APK, open Phone Use, then scan the pairing QR code shown by the computer, open it with an external QR scanner that supports app links, or paste its pairing code. Scanned and opened credentials are checked and the computer address is shown for confirmation before saving. If an external scanner cannot open app links, use Phone Use's in-app scanner. Saving connects with control disabled. Enable Phone Use under Android Accessibility settings; use Connect if the connection is stopped. Enable the control switch only when the phone is ready for a remote session. Use Disconnect in the app or its ongoing notification to stop the connection.
 
-If Android says PhoneUse is "Controlled by restricted setting," open **Setup help** in PhoneUse and choose **Open app info**. On the app-info screen, tap the three-dot menu and choose **Allow restricted settings**, then return to Accessibility settings and enable PhoneUse. Android requires this manual step for some sideloaded apps; PhoneUse cannot bypass it.
+If Android says Phone Use is "Controlled by restricted setting," open **Setup help** in Phone Use and choose **Open app info**. On the app-info screen, tap the three-dot menu and choose **Allow restricted settings**, then return to Accessibility settings and enable Phone Use. Android requires this manual step for some sideloaded apps; Phone Use cannot bypass it.
 
 Scanning requests camera access from Android. If camera access is denied or the scan is canceled, allow camera access in app permissions and scan again, or paste the pairing code instead.
 
-Choose blocked apps on the phone before enabling control. Remote requests are denied whenever a visible accessibility window belongs to a blocked app or PhoneUse itself. Screen capture and gestures require the Android accessibility service capabilities declared in `src/main/res/xml/accessibility_service.xml`.
+Choose blocked apps on the phone before enabling control. Remote requests are denied whenever a visible accessibility window belongs to a blocked app or Phone Use itself. Screen capture and gestures require the Android accessibility service capabilities declared in `src/main/res/xml/accessibility_service.xml`.
 
 Android exposes only retrievable accessibility window roots. The app fails closed when a visible window has no readable root or package, though Android system and vendor surfaces can limit which windows are exposed. Accessibility access does not grant access to private app storage or secure biometric screens.
 

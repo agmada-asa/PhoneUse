@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Installs the checkout-backed PhoneUse skill and registers its managed stdio MCP launcher. */
+/** Installs the checkout-backed Phone Use skill and registers its managed stdio MCP launcher. */
 import { access, cp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -114,7 +114,7 @@ async function checkSkillDestination(plan) {
 
   if (saved.repositoryRoot !== plan.repositoryRoot) {
     throw new Error(
-      'The installed PhoneUse skill belongs to another checkout. Move it aside or choose --skill-dir.',
+      'The installed Phone Use skill belongs to another checkout. Move it aside or choose --skill-dir.',
     );
   }
 }
@@ -165,7 +165,7 @@ export async function preflightSetup(options, { requireBuilt = false } = {}) {
   const plan = installationPlan(options);
 
   if (Number(process.versions.node.split('.')[0]) < 22) {
-    throw new Error('PhoneUse requires Node 22 or later.');
+    throw new Error('Phone Use requires Node 22 or later.');
   }
 
   if (requireBuilt) {
@@ -173,7 +173,9 @@ export async function preflightSetup(options, { requireBuilt = false } = {}) {
       await access(plan.mcpEntry, constants.R_OK);
       await access(join(repositoryRoot, 'node_modules/@modelcontextprotocol/sdk/package.json'));
     } catch {
-      throw new Error('PhoneUse is not built. Run npm ci and npm run build, then run setup again.');
+      throw new Error(
+        'Phone Use is not built. Run npm ci and npm run build, then run setup again.',
+      );
     }
   }
 
@@ -219,7 +221,7 @@ export async function setup(args = process.argv.slice(2)) {
 
   if (options.help) {
     console.log(
-      `PhoneUse setup\n\nRun npm ci and npm run build first.\n\n  npm run setup -- --codex                 Install skill and register Codex MCP\n  npm run setup -- --skill                 Install skill only\n  npm run setup -- --skill --skill-dir DIR Use another skill parent directory\n  npm run setup -- --print                 Preview paths and generic MCP JSON\n\nThe checkout must stay at this path. Start a new agent session after installation.\nAndroid installation, pairing, and enabling phone control remain on-device steps.`,
+      `Phone Use setup\n\nRun npm ci and npm run build first.\n\n  npm run setup -- --codex                 Install skill and register Codex MCP\n  npm run setup -- --skill                 Install skill only\n  npm run setup -- --skill --skill-dir DIR Use another skill parent directory\n  npm run setup -- --print                 Preview paths and generic MCP JSON\n\nThe checkout must stay at this path. Start a new agent session after installation.\nAndroid installation, pairing, and enabling phone control remain on-device steps.`,
     );
     return;
   }
@@ -249,7 +251,7 @@ export async function setup(args = process.argv.slice(2)) {
       );
     }
 
-    console.log(`Installed PhoneUse skill: ${plan.skillDestination}`);
+    console.log(`Installed Phone Use skill: ${plan.skillDestination}`);
   }
 
   if (options.codex && !registered) {
@@ -273,17 +275,17 @@ export async function setup(args = process.argv.slice(2)) {
   }
 
   if (options.codex) {
-    console.log(`PhoneUse MCP ${registered ? 'already registered' : 'registered'} with Codex.`);
+    console.log(`Phone Use MCP ${registered ? 'already registered' : 'registered'} with Codex.`);
   }
 
   console.log(
-    'Start a new agent session, then ask it to use PhoneUse. Pair and allow control on the phone.',
+    'Start a new agent session, then ask it to use Phone Use. Pair and allow control on the phone.',
   );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   setup().catch((error) => {
-    console.error(error instanceof Error ? error.message : 'PhoneUse setup failed.');
+    console.error(error instanceof Error ? error.message : 'Phone Use setup failed.');
     process.exitCode = 1;
   });
 }

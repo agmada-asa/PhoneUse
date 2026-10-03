@@ -1,6 +1,6 @@
-# Install PhoneUse as a skill and MCP server
+# Install Phone Use as a skill and MCP server
 
-PhoneUse has two desktop integration pieces: a skill with guidance for an agent and a local MCP server that exposes the phone tools. The installer can put the skill in Codex's skill directory and register the MCP server in one step. PhoneUse is installed from its Git repository; it is not published as an npm package, so do not use `npx phoneuse`.
+Phone Use has two desktop integration pieces: a skill with guidance for an agent and a local MCP server that exposes the phone tools. The installer can put the skill in Codex's skill directory and register the MCP server in one step. Phone Use is installed from its Git repository; it is not published as an npm package, so do not use `npx phoneuse`.
 
 ## Requirements
 
@@ -66,7 +66,7 @@ npm run setup                               # print help; make no changes
 
 Setup updates a skill previously installed from the same checkout. It refuses to overwrite an unrelated skill or a different `phoneuse` MCP registration. Review an existing registration with `codex mcp get phoneuse`; if you want to replace it, run `codex mcp remove phoneuse` before setup. This also applies when switching from the older manual `mcp.js` entry point.
 
-The installed skill remembers the checkout path in `installation.json`. If a copy of the skill has no such file or the path is invalid, use another PhoneUse checkout or clone the repository to a stable path before setup. The skill alone contains instructions; it does not contain the bridge executable or credentials.
+The installed skill remembers the checkout path in `installation.json`. If a copy of the skill has no such file or the path is invalid, use another Phone Use checkout or clone the repository to a stable path before setup. The skill alone contains instructions; it does not contain the bridge executable or credentials.
 
 An agent with a GitHub skill installer can install this repository's `skills/phoneuse` directory directly. Ask it to install that directory, then ask `$phoneuse` to set up the local runtime. Installing the skill alone does not register MCP tools; open a new agent session after runtime setup.
 
@@ -125,7 +125,7 @@ The MCP setup does not install the phone app or grant it access. Build and insta
 npm run android:build
 ```
 
-The APK is written to `artifacts/PhoneUse-debug.apk`. Install it on Android 11 or later, start the desktop bridge (or invoke the session launcher), and follow the QR pairing flow. On the phone, enable the PhoneUse accessibility service, choose protected apps, and turn on **Allow this computer to control the phone**. The phone owner must do these steps directly. Control remains off until explicitly enabled and is revoked on disconnect.
+The APK is written to `artifacts/PhoneUse-debug.apk`. Install it on Android 11 or later, start the desktop bridge (or invoke the session launcher), and follow the QR pairing flow. On the phone, enable the Phone Use accessibility service, choose protected apps, and turn on **Allow this computer to control the phone**. The phone owner must do these steps directly. Control remains off until explicitly enabled and is revoked on disconnect.
 
 For the full first-run sequence and network setup, see the [repository quick start](../README.md#quick-start). For Android restricted settings, use the app's setup help and approve any requested setting locally.
 

@@ -28,7 +28,7 @@ async function isRunning(options: CreateBridgeOptions, signal?: AbortSignal): Pr
       typeof (result as Record<string, unknown>).connected !== "boolean" ||
       typeof (result as Record<string, unknown>).phoneUrl !== "string"
     ) {
-      throw new Error("The local listener did not return a PhoneUse status.");
+      throw new Error("The local listener did not return a Phone Use status.");
     }
 
     return true;
@@ -143,6 +143,6 @@ export async function startManagedBridge(
   }
 
   throw new Error(
-    "Another PhoneUse process is still starting. Wait and reconnect the MCP session.",
+    "Another Phone Use process is still starting. Wait and reconnect the MCP session.",
   );
 }

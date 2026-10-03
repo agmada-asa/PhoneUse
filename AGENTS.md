@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Repository-wide guidance for AI coding agents working on PhoneUse. Adapted from EightForge's AGENTS.md. Keep this file concise and update it only when a durable project convention changes.
+Repository-wide guidance for AI coding agents working on Phone Use. Adapted from EightForge's AGENTS.md. Keep this file concise and update it only when a durable project convention changes.
 
 ## Project context
 
-- PhoneUse gives a local coding agent explicitly enabled access to an Android phone over an encrypted LAN connection.
+- Phone Use gives a local coding agent explicitly enabled access to an Android phone over an encrypted LAN connection.
 - `android/` owns the native Android companion, accessibility actions, connection lifecycle, and on-device consent controls.
 - `bridge/` owns the desktop WebSocket bridge, loopback operator console, CLI, and MCP tools.
 - `docs/` owns the wire protocol, setup, limitations, and manual verification instructions.

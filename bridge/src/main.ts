@@ -82,7 +82,7 @@ async function main(): Promise<void> {
         void stop();
       },
     });
-    console.log(`PhoneUse console: http://127.0.0.1:${adminPort}`);
+    console.log(`Phone Use console: http://127.0.0.1:${adminPort}`);
     console.log(`Phone connection: wss://${advertisedHost}:${phonePort}/phone`);
     console.log("Open the console to show your private pairing QR code. Press Ctrl+C to stop.");
     if (advertisedHost === "127.0.0.1")
@@ -116,7 +116,7 @@ async function main(): Promise<void> {
     const result = (await requestLocal("/api/pairing", undefined, { stateDir })) as {
       code: string;
     };
-    console.log("Private pairing code. Only paste this into your PhoneUse companion:");
+    console.log("Private pairing code. Only paste this into your Phone Use companion:");
     console.log(result.code);
     return;
   }
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   }
   if (command === "stop") {
     await requestLocal("/api/stop", {}, { stateDir, timeoutMs: 5000 });
-    console.log("PhoneUse bridge is stopping. Control on the phone is revoked.");
+    console.log("Phone Use bridge is stopping. Control on the phone is revoked.");
     return;
   }
   if (command === "command") {
@@ -151,6 +151,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "PhoneUse failed.");
+  console.error(error instanceof Error ? error.message : "Phone Use failed.");
   process.exitCode = 1;
 });

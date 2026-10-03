@@ -35,7 +35,7 @@ export async function ensureState(stateDir: string): Promise<BridgeState> {
   let saved: StateFile;
   try {
     const parsed: unknown = JSON.parse(await readFile(statePath, "utf8"));
-    if (!isStateFile(parsed)) throw new Error("Invalid PhoneUse state file");
+    if (!isStateFile(parsed)) throw new Error("Invalid Phone Use state file");
     saved = parsed;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -93,7 +93,7 @@ function generateCertificate(certPath: string, keyPath: string): Promise<void> {
         "-days",
         "3650",
         "-subj",
-        "/CN=PhoneUse Desktop Bridge",
+        "/CN=Phone Use Desktop Bridge",
       ],
       { stdio: "ignore" },
     );
