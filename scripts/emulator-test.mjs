@@ -205,7 +205,13 @@ async function main() {
   assert.ok(Date.now() - started < 2000, 'A protected window must interrupt a long swipe before its planned end');
   passed('opening a protected app interrupts an in-flight long swipe');
   assert.equal((await waitStatus(value => value.connected)).status.controlEnabled, true, 'Interrupted swipe preserves local consent');
-  await localTap('Choose apps'); await localTap('PhoneUse test screen  ·  dev.phoneuse.fixture'); await localTap('Save');
+  await localTap('Choose apps');
+  // Filter the picker so the fixture row is on screen without scrolling the list.
+  await localTap('Search apps');
+  await adb('shell', 'input', 'text', 'dev.phoneuse.fixture');
+  await settle();
+  await localTap('PhoneUse test screen');
+  await localTap('Save');
   // uiautomator dump temporarily suppresses accessibility services. Restore consent locally after setup.
   await localTap('Allow this computer to control the phone');
   await waitStatus(value => value.status?.controlEnabled && value.status?.accessibilityEnabled);

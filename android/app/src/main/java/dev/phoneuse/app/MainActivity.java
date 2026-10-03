@@ -4,6 +4,7 @@ package dev.phoneuse.app;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -14,7 +15,9 @@ import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -26,11 +29,13 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -41,9 +46,9 @@ import com.google.zxing.integration.android.IntentResult;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -655,45 +660,223 @@ public final class MainActivity extends Activity {
     ConnectionService.publishLocalStatus();
   }
 
-  /** Lists launcher apps and edits the persisted user-owned blocklist in one native picker. */
+  /** One launcher app offered by the protected apps picker. */
+  private static final class AppChoice {
+    final String packageName, label;
+
+    AppChoice(String packageName, String label) {
+      this.packageName = packageName;
+      this.label = label;
+    }
+  }
+
+  /**
+   * Opens a searchable picker of launcher apps, styled like the rest of the screen, and saves the
+   * checked apps to the persisted user-owned blocklist. Blocked packages that are no longer
+   * launchable are kept unchanged.
+   */
   private void showAppPicker() {
+    PackageManager pm = getPackageManager();
     Intent query = new Intent(Intent.ACTION_MAIN);
     query.addCategory(Intent.CATEGORY_LAUNCHER);
-    List<ResolveInfo> installed =
-        getPackageManager().queryIntentActivities(query, PackageManager.MATCH_ALL);
-    Collections.sort(
-        installed,
-        Comparator.comparing(
-            r ->
-                String.valueOf(r.loadLabel(getPackageManager()))
-                    .toLowerCase(java.util.Locale.ROOT)));
-    ArrayList<String> packages = new ArrayList<>(), labels = new ArrayList<>();
-    Set<String> selected = blockedPackages();
-    for (ResolveInfo info : installed) {
+    ArrayList<AppChoice> apps = new ArrayList<>();
+    HashSet<String> listed = new HashSet<>();
+    for (ResolveInfo info : pm.queryIntentActivities(query, PackageManager.MATCH_ALL)) {
       String pkg = info.activityInfo.packageName;
-      if (PhoneState.OWN_PACKAGE.equals(pkg) || packages.contains(pkg)) continue;
-      packages.add(pkg);
-      labels.add(info.loadLabel(getPackageManager()) + "  ·  " + pkg);
+      if (PhoneState.OWN_PACKAGE.equals(pkg) || !listed.add(pkg)) continue;
+      apps.add(new AppChoice(pkg, String.valueOf(info.loadLabel(pm))));
     }
-    boolean[] checked = new boolean[packages.size()];
-    for (int i = 0; i < packages.size(); i++) checked[i] = selected.contains(packages.get(i));
-    new AlertDialog.Builder(this)
-        .setTitle("Choose blocked apps")
-        .setMultiChoiceItems(
-            labels.toArray(new String[0]),
-            checked,
-            (dialog, which, isChecked) -> checked[which] = isChecked)
-        .setNegativeButton("Cancel", null)
-        .setPositiveButton(
-            "Save",
-            (dialog, which) -> {
-              HashSet<String> updated = new HashSet<>();
-              for (int i = 0; i < packages.size(); i++)
-                if (checked[i]) updated.add(packages.get(i));
-              for (String old : selected) if (!packages.contains(old)) updated.add(old);
-              saveBlocklist(updated);
-            })
-        .show();
+    Collections.sort(apps, (a, b) -> a.label.compareToIgnoreCase(b.label));
+    Set<String> original = blockedPackages();
+    HashSet<String> selected = new HashSet<>(original);
+    HashMap<String, Drawable> icons = new HashMap<>();
+    ArrayList<AppChoice> visible = new ArrayList<>(apps);
+
+    Dialog dialog = new Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
+    LinearLayout sheet = vertical();
+    sheet.setPadding(0, dp(20), 0, dp(12));
+
+    LinearLayout heading = vertical();
+    heading.setPadding(dp(20), 0, dp(20), 0);
+    TextView title = sectionTitle("Choose protected apps");
+    heading.addView(title);
+    TextView count = text("", 14, muted, false);
+    count.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+    heading.addView(count, margin(0, 2, 0, 12));
+    EditText search = input("Search apps");
+    search.setSingleLine(true);
+    search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+    heading.addView(search, margin(0, 0, 0, 8));
+    sheet.addView(heading);
+
+    TextView empty = text("No apps match your search.", 15, muted, false);
+    empty.setGravity(Gravity.CENTER);
+    empty.setPadding(dp(20), dp(32), dp(20), dp(32));
+    empty.setVisibility(View.GONE);
+    sheet.addView(empty, margin(0, 0, 0, 0));
+
+    ListView list = new ListView(this);
+    list.setDivider(null);
+    list.setSelector(android.R.color.transparent);
+    list.setClipToPadding(false);
+    list.setPadding(dp(8), 0, dp(8), dp(8));
+    Runnable updateCount =
+        () ->
+            count.setText(
+                selected.isEmpty()
+                    ? "No apps protected yet"
+                    : selected.size() + (selected.size() == 1 ? " app" : " apps") + " protected");
+    BaseAdapter adapter =
+        new BaseAdapter() {
+          @Override
+          public int getCount() {
+            return visible.size();
+          }
+
+          @Override
+          public AppChoice getItem(int position) {
+            return visible.get(position);
+          }
+
+          @Override
+          public long getItemId(int position) {
+            return position;
+          }
+
+          @Override
+          public View getView(int position, View convertView, android.view.ViewGroup parent) {
+            View row = convertView != null ? convertView : appRow();
+            AppRowViews views = (AppRowViews) row.getTag();
+            AppChoice app = getItem(position);
+            Drawable icon = icons.get(app.packageName);
+            if (icon == null) {
+              try {
+                icon = pm.getApplicationIcon(app.packageName);
+              } catch (PackageManager.NameNotFoundException e) {
+                icon = pm.getDefaultActivityIcon();
+              }
+              icons.put(app.packageName, icon);
+            }
+            boolean on = selected.contains(app.packageName);
+            views.icon.setImageDrawable(icon);
+            views.label.setText(app.label);
+            views.packageName.setText(app.packageName);
+            styleCheck(views.check, on);
+            row.setBackground(
+                withRipple(rounded(on ? sunk : Color.TRANSPARENT, 0, 16), rippleColor()));
+            row.setContentDescription(app.label + (on ? ", protected" : ", not protected"));
+            return row;
+          }
+        };
+    list.setAdapter(adapter);
+    list.setOnItemClickListener(
+        (parent, view, position, id) -> {
+          String pkg = visible.get(position).packageName;
+          if (!selected.remove(pkg)) selected.add(pkg);
+          adapter.notifyDataSetChanged();
+          updateCount.run();
+        });
+    sheet.addView(list, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+    search.addTextChangedListener(
+        new android.text.TextWatcher() {
+          @Override
+          public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+          @Override
+          public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+          @Override
+          public void afterTextChanged(android.text.Editable s) {
+            String needle = s.toString().trim().toLowerCase(Locale.ROOT);
+            visible.clear();
+            for (AppChoice app : apps)
+              if (needle.isEmpty()
+                  || app.label.toLowerCase(Locale.ROOT).contains(needle)
+                  || app.packageName.toLowerCase(Locale.ROOT).contains(needle)) visible.add(app);
+            adapter.notifyDataSetChanged();
+            empty.setVisibility(visible.isEmpty() ? View.VISIBLE : View.GONE);
+          }
+        });
+
+    LinearLayout footer = horizontal();
+    footer.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+    footer.setPadding(dp(16), dp(12), dp(16), 0);
+    Button cancel = button("Cancel", Style.LINK);
+    cancel.setOnClickListener(v -> dialog.dismiss());
+    footer.addView(cancel, wrap());
+    Button save = button("Save", Style.PRIMARY);
+    save.setOnClickListener(
+        v -> {
+          // Keep blocked packages the picker could not show, such as uninstalled apps.
+          HashSet<String> updated = new HashSet<>(selected);
+          for (String old : original) if (!listed.contains(old)) updated.add(old);
+          saveBlocklist(updated);
+          dialog.dismiss();
+        });
+    footer.addView(save, wrapMargin(8, 0, 0, 0));
+    sheet.addView(footer);
+
+    updateCount.run();
+    dialog.setContentView(sheet);
+    android.view.Window window = dialog.getWindow();
+    window.setBackgroundDrawable(
+        new InsetDrawable(rounded(card, line, 24), dp(12), dp(16), dp(12), dp(16)));
+    // Fill the screen inside the inset margins so the keyboard can shrink the list, not hide Save.
+    window.setLayout(-1, -1);
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+    dialog.show();
+  }
+
+  /** Views inside one recycled picker row, kept as the row's tag. */
+  private static final class AppRowViews {
+    ImageView icon, check;
+    TextView label, packageName;
+  }
+
+  /** Builds one reusable picker row: app icon, name and package, and a round check on the right. */
+  private View appRow() {
+    AppRowViews views = new AppRowViews();
+    LinearLayout row = horizontal();
+    row.setMinimumHeight(dp(64));
+    row.setPadding(dp(12), dp(8), dp(12), dp(8));
+    views.icon = new ImageView(this);
+    views.icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+    row.addView(views.icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
+    LinearLayout labels = vertical();
+    views.label = text("", 16, ink, true);
+    views.label.setSingleLine(true);
+    views.label.setEllipsize(TextUtils.TruncateAt.END);
+    labels.addView(views.label);
+    views.packageName = text("", 13, muted, false);
+    views.packageName.setSingleLine(true);
+    views.packageName.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+    labels.addView(views.packageName);
+    LinearLayout.LayoutParams labelParams = weighted();
+    labelParams.leftMargin = dp(14);
+    labelParams.rightMargin = dp(12);
+    row.addView(labels, labelParams);
+    views.check = new ImageView(this);
+    views.check.setPadding(dp(4), dp(4), dp(4), dp(4));
+    views.check.setImageTintList(ColorStateList.valueOf(paper));
+    views.check.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+    row.addView(views.check, new LinearLayout.LayoutParams(dp(24), dp(24)));
+    row.setTag(views);
+    return row;
+  }
+
+  /** Draws the picker's round check: filled with a tick when protected, an empty ring otherwise. */
+  private void styleCheck(ImageView check, boolean on) {
+    check.setImageResource(on ? R.drawable.ic_check : 0);
+    check.setBackground(
+        on
+            ? rounded(brand, 0, 999)
+            : rounded(Color.TRANSPARENT, isDark() ? 0x59FFFFFF : 0x5914130F, 999));
+  }
+
+  /** Touch feedback color for transparent controls in the current theme. */
+  private int rippleColor() {
+    return isDark() ? 0x33FFFFFF : 0x2214130F;
   }
 
   /** Lets the phone user remove manually added or no-longer-installed package names. */
