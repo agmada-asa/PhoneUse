@@ -115,6 +115,26 @@ test("loopback API authenticates, validates, serializes commands and disconnects
   }
 });
 
+test("console serves its fonts, the agent command, and the phone address, but no other public files", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "phoneuse-console-"));
+  const publicDir = join(import.meta.dirname, "../../public");
+  const bridge = await createBridge({ stateDir, host: "127.0.0.1", phonePort: 0, adminPort: 0, advertisedHost: "192.168.1.20", publicDir, mcpEntry: "/opt/phone<use>/mcp.js" });
+  const api = bridge.adminAddress.url;
+  try {
+    const page = await fetch(api);
+    const html = await page.text();
+    assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'self'/);
+    assert.ok(html.includes("node /opt/phone&lt;use&gt;/mcp.js"), "MCP entry is HTML-escaped into the page");
+    assert.ok(!html.includes("{{"), "Every template placeholder is filled");
+    const font = await fetch(`${api}/fonts/instrument-sans.woff2`);
+    assert.equal(font.status, 200);
+    assert.equal(font.headers.get("content-type"), "font/woff2");
+    for (const path of ["/fonts/OFL.txt", "/fonts/bbh-bartle.woff", "/fonts/other.woff2"]) assert.equal((await fetch(`${api}${path}`)).status, 404, path);
+    const status = await fetch(`${api}/api/status`, { headers: { authorization: `Bearer ${bridge.state.adminToken}` } });
+    assert.equal((await status.json() as { phoneUrl: string }).phoneUrl, bridge.phoneAddress.url);
+  } finally { await bridge.close(); await rm(stateDir, { recursive: true, force: true }); }
+});
+
 test("active command timeout reports uncertain execution and closes the phone session", async () => {
   const stateDir = await mkdtemp(join(tmpdir(), "phoneuse-timeout-"));
   const bridge = await createBridge({ stateDir, host: "127.0.0.1", phonePort: 0, adminPort: 0, advertisedHost: "127.0.0.1", commandTimeoutMs: 120 });

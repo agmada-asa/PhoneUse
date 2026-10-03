@@ -135,6 +135,7 @@ async function main() {
   await adb('shell', 'settings', 'put', 'secure', 'accessibility_enabled', '1');
   bridge = await createBridge({ stateDir, host: '0.0.0.0', advertisedHost: '10.0.2.2', phonePort: 18765, adminPort: 18766, commandTimeoutMs: 12000 });
   await adb('shell', 'am', 'start', '-n', 'dev.phoneuse.app/.MainActivity'); await settle(1200);
+  await localTap('Paste a code instead');
   const editor = (await uiNodes()).find(item => item.class === 'android.widget.EditText');
   assert.ok(editor?.center, 'Pairing editor exists');
   await adb('shell', 'input', 'tap', ...editor.center.map(String));
@@ -147,10 +148,9 @@ async function main() {
   }
   await adb('shell', 'input', 'keyevent', '4'); await settle();
   await localTap('Save pairing code');
-  assert.ok((await uiNodes()).some(item => item.text === 'Pairing code saved on this phone.'), 'Manual pairing saves validated credentials');
-  await localTap('OK');
-  await localTap('Connect');
+  // Saving a valid pairing connects immediately; consent remains off until the local switch.
   await waitStatus(value => value.connected);
+  passed('manual pairing saves credentials and connects');
   await denied('snapshot', {}, 'CONTROL_DISABLED'); passed('control disabled refuses observation');
   await localTap('Allow this computer to control the phone');
   await waitStatus(value => value.status?.controlEnabled);
@@ -205,7 +205,13 @@ async function main() {
   assert.ok(Date.now() - started < 2000, 'A protected window must interrupt a long swipe before its planned end');
   passed('opening a protected app interrupts an in-flight long swipe');
   assert.equal((await waitStatus(value => value.connected)).status.controlEnabled, true, 'Interrupted swipe preserves local consent');
-  await localTap('Choose apps to block'); await localTap('PhoneUse test screen  ·  dev.phoneuse.fixture'); await localTap('Save');
+  await localTap('Choose apps');
+  // Filter the picker so the fixture row is on screen without scrolling the list.
+  await localTap('Search apps');
+  await adb('shell', 'input', 'text', 'dev.phoneuse.fixture');
+  await settle();
+  await localTap('PhoneUse test screen');
+  await localTap('Save');
   // uiautomator dump temporarily suppresses accessibility services. Restore consent locally after setup.
   await localTap('Allow this computer to control the phone');
   await waitStatus(value => value.status?.controlEnabled && value.status?.accessibilityEnabled);

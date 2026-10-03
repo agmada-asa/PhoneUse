@@ -11,6 +11,12 @@ import QRCode from "qrcode";
 import { ensureState, type BridgeState } from "./state.js";
 import { HelloSchema, MAX_MESSAGE_BYTES, makeCommandMessage, parseCommand, PhoneResultSchema, validateCommandResult, type CommandMethod, type PhoneHello } from "./protocol.js";
 
+/** Console assets served beside index.html; anything else under the public directory stays private. */
+const STATIC_FILES = /^\/(console\.js|console\.css|fonts\/(instrument-sans|bbh-bartle)\.woff2)$/;
+
+/** Content types for the console assets allowed by `STATIC_FILES`. */
+const STATIC_TYPES: Record<string, string> = { ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2" };
+
 /** Configuration for both listeners and optional operator-console files. */
 export interface CreateBridgeOptions {
   stateDir: string;
@@ -21,6 +27,8 @@ export interface CreateBridgeOptions {
   commandTimeoutMs?: number;
   consoleHtml?: (csrfToken: string) => string;
   publicDir?: string;
+  /** Absolute MCP entry point shown in the console's agent setup command. */
+  mcpEntry?: string;
 }
 
 /** A started local bridge. `state` exposes pairing material only to the trusted embedding CLI. */
@@ -96,6 +104,11 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
       timer.unref();
       closeTimers.set(previous, timer);
     }
+  }
+  /** Returns the encrypted phone endpoint advertised in pairing codes. */
+  function phoneUrl(): string {
+    const port = (tlsServer.address() as { port: number }).port;
+    return `wss://${formatHost(options.advertisedHost ?? guessAdvertisedHost(listenHost))}:${port}/phone`;
   }
   /** Report whether a phone completed hello and still has an open transport. */
   function isCurrentReady(): boolean { return Boolean(phone && phone.readyState === WebSocket.OPEN && hello); }
@@ -252,10 +265,9 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
     if (request.headers["sec-fetch-site"] === "cross-site") return sendJson(response, 403, { error: { code: "ORIGIN_REJECTED", message: "This request came from another origin." } });
     if (request.method === "GET" && ["/api/status", "/api/pairing"].includes(request.url ?? "")) {
       if ((browser && (request.url !== "/api/pairing" || csrf)) || (!browser && (bearerMatches(request, state.adminToken) || csrf))) {
-        if (request.url === "/api/status") return sendJson(response, 200, { connected: isCurrentReady(), ...(hello ? { device: hello.device, status: hello.status } : {}) });
-        const advertisedHost = options.advertisedHost ?? guessAdvertisedHost(listenHost);
-        const port = (tlsServer.address() as { port: number }).port;
-        const url = `wss://${formatHost(advertisedHost)}:${port}/phone`;
+        const url = phoneUrl();
+        // The advertised address is not a credential; the console shows it so the operator can check the network.
+        if (request.url === "/api/status") return sendJson(response, 200, { connected: isCurrentReady(), phoneUrl: url, ...(hello ? { device: hello.device, status: hello.status } : {}) });
         const payload = { v: 1, url, token: state.phoneToken, fingerprint: state.fingerprint };
         const code = `phoneuse:${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`;
         try {
@@ -284,10 +296,10 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
         return sendJson(response, 200, await execute(method, params));
       } catch (error) { return sendError(response, error); }
     }
-    if (request.method === "GET" && (request.url === "/" || request.url === "/index.html" || /^\/(console\.js|console\.css)$/.test(request.url ?? ""))) {
+    if (request.method === "GET" && (request.url === "/" || request.url === "/index.html" || STATIC_FILES.test(request.url ?? ""))) {
       if (request.url === "/" || request.url === "/index.html") {
         const html = options.consoleHtml ? options.consoleHtml(state.csrfToken) : options.publicDir ?
-          (await readFile(join(options.publicDir, "index.html"), "utf8")).replaceAll("{{CSRF_TOKEN}}", escapeHtml(state.csrfToken)) :
+          (await readFile(join(options.publicDir, "index.html"), "utf8")).replaceAll("{{CSRF_TOKEN}}", escapeHtml(state.csrfToken)).replaceAll("{{MCP_ENTRY}}", escapeHtml(options.mcpEntry ?? "bridge/dist/src/mcp.js")) :
           "<!doctype html><html><body>PhoneUse local bridge is running.</body></html>";
         response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; form-action 'self'" });
         response.end(html);
@@ -299,7 +311,7 @@ export async function createBridge(options: CreateBridgeOptions): Promise<Runnin
       try {
         const info = await stat(file);
         if (!info.isFile() || !resolve(file).startsWith(`${resolve(options.publicDir)}${sep}`)) throw new Error("invalid path");
-        response.writeHead(200, { "content-type": staticUrl.endsWith(".js") ? "text/javascript; charset=utf-8" : "text/css; charset=utf-8", "x-content-type-options": "nosniff", "cache-control": "no-cache" });
+        response.writeHead(200, { "content-type": STATIC_TYPES[extname(staticUrl)] ?? "application/octet-stream", "x-content-type-options": "nosniff", "cache-control": "no-cache" });
         createReadStream(file).pipe(response);
       } catch { sendJson(response, 404, { error: { code: "NOT_FOUND", message: "Not found." } }); }
       return;

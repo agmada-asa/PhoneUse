@@ -1,9 +1,12 @@
+<!-- Light app theme in the EightForge palette; values-night swaps in the dark base. -->
 <resources>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#2457C5</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
-        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">@color/brand</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:statusBarColor">@color/paper</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

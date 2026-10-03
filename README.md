@@ -22,15 +22,15 @@ cd /Users/agmad/Documents/PhoneUse
 npm start
 ```
 
-Open **http://127.0.0.1:8766** on the computer. Connect the phone and computer to the same LAN, then:
+Open **http://127.0.0.1:8766** on the computer and connect the phone and computer to the same Wi-Fi network. The console walks through these steps and checks each one off as the phone reports it:
 
-1. Open PhoneUse on Android and select **Open Accessibility settings**. Enable the PhoneUse service. If Android shows "Controlled by restricted setting", open **Settings → Apps → PhoneUse → the three-dot menu → Allow restricted settings**, confirm locally, then return to accessibility and enable PhoneUse. The app's **Accessibility setup help** button opens instructions and an App info shortcut. See [Google's restricted settings instructions](https://support.google.com/android/answer/12623953?hl=en).
-2. In the computer console, select **Show pairing QR code**. On the phone, select **Scan pairing QR code**, allow camera access, and scan the computer screen. Confirm the computer address to save the pairing. Use **Pair by pasting a code instead** in the console if you cannot use the camera. After PhoneUse is installed, camera or gallery scanners that support custom app links can also open this QR code in PhoneUse. If your scanner only shows text, use PhoneUse's built-in scanner or the paste fallback. Treat the QR code and pairing text like a password. Keep them private and use **Hide pairing QR code** when finished.
-3. Select **Choose apps to block** on the phone and block the apps you want protected. A package-name field covers apps absent from the launcher list. PhoneUse itself is always protected.
-4. Select **Connect**, allow the connection notification, and enable **Allow this computer to control the phone**.
-5. Leave PhoneUse and open an allowed app. In the computer console, try **Read screen**, **Take screenshot**, or **Home**. Commands fail while PhoneUse or a blocked app is visible. Leave those apps locally to resume.
+1. **Pair and connect.** In the console, select **Show pairing QR code**. In PhoneUse on the phone, select **Scan pairing QR code**, allow camera access, scan the computer screen, and confirm the computer address. The phone connects as soon as the pairing is saved, and the console hides the QR code once it does. If you cannot use the camera, use **Pair by pasting a code instead** in the console and **Paste a code instead** on the phone. Camera or gallery scanners that support custom app links can also open the QR code in PhoneUse. Treat the QR code and pairing text like a password.
+2. **Turn on accessibility.** In PhoneUse, select **Turn on** next to Accessibility and enable the PhoneUse service. If Android shows "Controlled by restricted setting", open **Settings → Apps → PhoneUse → the three-dot menu → Allow restricted settings**, confirm locally, then return to accessibility and enable PhoneUse. PhoneUse's **Setup help** link opens these instructions with an App info shortcut. See [Google's restricted settings instructions](https://support.google.com/android/answer/12623953?hl=en).
+3. **Protect apps.** Under **Protected apps**, select **Choose apps** and pick the apps the computer must never see or control. **Add by package name** covers apps missing from the launcher list. PhoneUse itself is always protected.
+4. **Allow control.** Turn on **Allow this computer to control the phone**. It switches off whenever the phone disconnects. Allow the connection notification if asked.
+5. **Try it.** Leave PhoneUse and open an allowed app. In the console, try **Read screen**, **Take screenshot**, or **Home**. Commands fail while PhoneUse or a protected app is visible. Leave those apps on the phone to continue.
 
-To stop, select **Disconnect** on the phone, use the connection notification's disconnect action, or select **Disconnect phone** in the computer console. The phone must explicitly reconnect after a deliberate disconnect. Stopping the bridge also ends the session.
+To stop, select **Disconnect** on the phone, use the connection notification's disconnect action, or select **Disconnect** in the computer console. The phone must explicitly reconnect after a deliberate disconnect. Stopping the bridge also ends the session.
 
 If the console advertises the wrong address, restart with your computer's Wi-Fi IP:
 
@@ -42,7 +42,7 @@ Only the encrypted phone listener, port **8765**, accepts LAN connections. The o
 
 ## Give Codex the tools
 
-Keep `npm start` running. Register the MCP process with a local Codex client:
+Keep `npm start` running. Register the MCP process with a local Codex client. The console's **Connect your coding agent** step shows this command with the correct path for your checkout and a copy button:
 
 On this computer, the `phoneuse` MCP server has already been registered. The command below is for re-registering it or setting up another machine.
 
