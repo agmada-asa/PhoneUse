@@ -24,7 +24,8 @@
     "mcp": "node bridge/dist/src/mcp.js",
     "android:build": "bash scripts/build-android.sh",
     "android:install": "bash scripts/install-android.sh",
-    "test:android": "node scripts/emulator-test.mjs"
+    "test:android": "node scripts/emulator-test.mjs",
+    "test:android:connection": "node scripts/connection-test.mjs"
   },
   "license": "MIT",
   "devDependencies": {
