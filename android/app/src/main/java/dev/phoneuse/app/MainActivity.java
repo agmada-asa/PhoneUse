@@ -97,6 +97,7 @@ public final class MainActivity extends Activity {
     ScrollView scroll = new ScrollView(this);
     root = new LinearLayout(this);
     root.setOrientation(LinearLayout.VERTICAL);
+    root.setFocusableInTouchMode(true);
     root.setPadding(dp(22), dp(20), dp(22), dp(28));
     root.setBackgroundColor(Color.WHITE);
     scroll.addView(root);
@@ -212,6 +213,10 @@ public final class MainActivity extends Activity {
           .putString("pair_pin", config.fingerprint)
           .apply();
       pairingInput.setText("");
+      pairingInput.clearFocus();
+      root.requestFocus();
+      getSystemService(android.view.inputmethod.InputMethodManager.class)
+          .hideSoftInputFromWindow(pairingInput.getWindowToken(), 0);
       showMessage("Pairing code saved on this phone.");
     } catch (Exception e) {
       showMessage(e.getMessage() == null ? "Pairing code is invalid." : e.getMessage());

@@ -80,10 +80,14 @@ public final class ConnectionService extends Service {
     liveService = this;
   }
 
-  /** Sends the current complete status frame when the user changes local accessibility consent. */
+  /** Refreshes phone controls and sends the complete status frame after local consent changes. */
   static void publishLocalStatus() {
     ConnectionService service = liveService;
-    if (service != null) service.sendStatus();
+    if (service != null) {
+      service.sendStatus();
+      service.sendBroadcast(
+          new Intent("dev.phoneuse.app.STATE_CHANGED").setPackage(service.getPackageName()));
+    }
   }
 
   /** Handles explicit connect, disconnect, and consent status changes while foregrounded. */
