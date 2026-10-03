@@ -1,0 +1,12 @@
+<!-- Dark app theme so system dialogs and the window match night mode. -->
+<resources>
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#609BF4</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
